@@ -36,7 +36,7 @@ void get_sd_com(vec_com_t* vec_com, const uint8_t* iv, uint32_t lambda, unsigned
                 uint8_t* sd, uint8_t* com) {
   const unsigned int lambda_bytes = lambda / 8;
 
-  uint8_t* children = malloc(lambda_bytes * 2);
+  uint8_t* children = alloca(lambda_bytes * 2);
   uint8_t* l_child  = children;
   uint8_t* r_child  = l_child + lambda_bytes;
 
@@ -90,7 +90,7 @@ void get_sd_com(vec_com_t* vec_com, const uint8_t* iv, uint32_t lambda, unsigned
   vec_com->path.index = index;
 
   H0(node, lambda, iv, sd, com);
-  free(children);
+  //free(children);
 }
 
 void vector_commitment(const uint8_t* rootKey, uint32_t lambda, uint32_t depth, uint8_t* path_nodes, vec_com_t* vec_com) {

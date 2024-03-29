@@ -603,7 +603,7 @@ static void aes_prove_128(const uint8_t* w, vbb_t* vbb, const uint8_t* in, const
   // Step: 6
 
   // Step: 7 + 18
-  uint8_t* k = malloc((FAEST_128F_R + 1) * 128 / 8);
+  uint8_t* k = alloca((FAEST_128F_R + 1) * 128 / 8);
   // bf128_t* vk = faest_aligned_alloc(BF128_ALIGN, sizeof(bf128_t) * ((FAEST_128F_R + 1) * 128));
   zk_hash_128_ctx a0_ctx;
   zk_hash_128_ctx a1_ctx;
@@ -620,7 +620,7 @@ static void aes_prove_128(const uint8_t* w, vbb_t* vbb, const uint8_t* in, const
   aes_enc_constraints_Mkey_0_128(in, out, w, vbb, offset, k, &a0_ctx, &a1_ctx);
   // Step: 12 (beta == 1)
   // faest_aligned_free(vk);
-  free(k);
+  //free(k);
 
   // Step: 16..18
   zk_hash_128_finalize(a_tilde, &a1_ctx, bf128_load(get_vole_u(vbb) + FAEST_128F_L / 8));
@@ -1049,7 +1049,7 @@ static void aes_prove_192(const uint8_t* w, vbb_t* vbb, const uint8_t* in, const
   // Step: 6
 
   // Step: 7 + 18
-  uint8_t* k = malloc((FAEST_192F_R + 1) * 128 / 8);
+  uint8_t* k = alloca((FAEST_192F_R + 1) * 128 / 8);
   // bf192_t* vk = faest_aligned_alloc(BF192_ALIGN, sizeof(bf192_t) * ((FAEST_192F_R + 1) * 128));
   zk_hash_192_ctx a0_ctx;
   zk_hash_192_ctx a1_ctx;
@@ -1068,7 +1068,7 @@ static void aes_prove_192(const uint8_t* w, vbb_t* vbb, const uint8_t* in, const
   offset = FAEST_192F_Lke + FAEST_192F_Lenc;
   aes_enc_constraints_Mkey_0_192(in + 16, out + 16, w, vbb, offset, k, &a0_ctx, &a1_ctx);
   // faest_aligned_free(vk);
-  free(k);
+  //free(k);
 
   // Step: 16..18
   zk_hash_192_finalize(a_tilde, &a1_ctx, bf192_load(get_vole_u(vbb) + FAEST_192F_L / 8));
@@ -1514,7 +1514,7 @@ static void aes_prove_256(const uint8_t* w, vbb_t* vbb, const uint8_t* in, const
   // Step: 6
 
   // Step: 7 + 18
-  uint8_t* k = malloc((FAEST_256F_R + 1) * 128 / 8);
+  uint8_t* k = alloca((FAEST_256F_R + 1) * 128 / 8);
   // bf256_t* vk = faest_aligned_alloc(BF256_ALIGN, sizeof(bf256_t) * ((FAEST_256F_R + 1) * 128));
   zk_hash_256_ctx a0_ctx;
   zk_hash_256_ctx a1_ctx;
@@ -1533,7 +1533,7 @@ static void aes_prove_256(const uint8_t* w, vbb_t* vbb, const uint8_t* in, const
   offset = FAEST_256F_Lke + FAEST_256F_Lenc;
   aes_enc_constraints_Mkey_0_256(in + 16, out + 16, w, vbb, offset, k, &a0_ctx, &a1_ctx);
   // faest_aligned_free(vk);
-  free(k);
+  //free(k);
 
   // Step: 16..18
   zk_hash_256_finalize(a_tilde, &a1_ctx, bf256_load(get_vole_u(vbb) + FAEST_256F_L / 8));
