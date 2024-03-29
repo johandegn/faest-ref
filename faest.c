@@ -394,13 +394,14 @@ int faest_verify(const uint8_t* msg, size_t msglen, const uint8_t* sig, const ui
                    dsignature_d(sig, params), lambda, l);
 
   prepare_aes_verify(&vbb);
+  uint8_t* q_tilde = alloca(lambdaBytes);
   uint8_t* b_tilde = aes_verify(&vbb, chall_2, dsignature_chall_3(sig, params),
-                                dsignature_a_tilde(sig, params), owf_input, owf_output, params);
+                                dsignature_a_tilde(sig, params), owf_input, owf_output, params, q_tilde);
 
   uint8_t chall_3[MAX_LAMBDA_BYTES];
   hash_challenge_3(chall_3, chall_2, dsignature_a_tilde(sig, params), b_tilde, lambda);
-  free(b_tilde);
-  b_tilde = NULL;
+  //free(b_tilde);
+  //b_tilde = NULL;
   //clean_vbb(&vbb);
 
   return memcmp(chall_3, dsignature_chall_3(sig, params), lambdaBytes) == 0 ? 0 : -1;
