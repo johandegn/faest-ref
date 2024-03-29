@@ -76,25 +76,36 @@ void init_vbb_sign(vbb_t* vbb, unsigned int len, const uint8_t* root_key, const 
 
   vbb->party        = SIGNER;
   vbb->iv           = iv;
-  vbb->com_hash     = calloc(MAX_LAMBDA_BYTES * 2, sizeof(uint8_t));
   vbb->params       = params;
   vbb->root_key     = root_key;
   vbb->full_size    = len >= ellhat;
-  vbb->vole_U       = malloc(ellhat_bytes);
   vbb->row_count    = row_count;
+  vbb->column_count = column_count;
+  /* Setup in init_stack_allocations_sign which takes stack allocations as input
+  vbb->com_hash     = calloc(MAX_LAMBDA_BYTES * 2, sizeof(uint8_t));
+  vbb->vole_U       = malloc(ellhat_bytes);
   vbb->vole_cache   = calloc(row_count, lambda_bytes);
   vbb->v_buf        = malloc(lambda_bytes);
-  vbb->column_count = column_count;
 
   // Setup vk_buf if we are not in an EM variant
   if (!is_em_variant(vbb->params->faest_paramid)) {
     vbb->vk_buf = malloc(lambda_bytes);
   }
+  */
   
   sign_vole_mode_ctx_t mode = vbb->full_size ? vole_mode_all_sign(vbb->vole_cache, vbb->vole_U, vbb->com_hash, c)
                                     : vole_mode_u_hcom_c(vbb->vole_U, vbb->com_hash, c);
 
   partial_vole_commit_cmo(vbb->root_key, vbb->iv, ellhat, 0, lambda, mode, vbb->params);
+}
+
+void init_stack_allocations_sign(vbb_t* vbb, uint8_t* hcom, uint8_t* u, uint8_t* v, uint8_t* v_buffer, uint8_t* vk_buffer, uint8_t* vk_cache){
+  vbb->com_hash   = hcom;
+  vbb->vole_U     = u;
+  vbb->vole_cache = v;
+  vbb->v_buf      = v_buffer;
+  vbb->vk_buf     = vk_buffer;
+  vbb->vk_cache   = vk_cache;
 }
 
 void prepare_hash_sign(vbb_t* vbb) {
@@ -119,13 +130,13 @@ void vector_open_ondemand(vbb_t* vbb, unsigned int idx, const uint8_t* s_, uint8
   const unsigned int lambda       = vbb->params->faest_param.lambda;
   const unsigned int lambda_bytes = lambda / 8;
   const unsigned int tau          = vbb->params->faest_param.tau;
-  uint8_t* expanded_keys          = malloc(tau * lambda_bytes);
+  uint8_t* expanded_keys          = alloca(tau * lambda_bytes);
   prg(vbb->root_key, vbb->iv, expanded_keys, lambda, lambda_bytes * tau);
 
   vec_com_t vec_com;
   vector_commitment(expanded_keys + lambda_bytes * idx, lambda, depth, NULL, &vec_com);
   vector_open(&vec_com, s_, sig_pdec, sig_com, depth, vbb->iv, lambda);
-  free(expanded_keys);
+  //free(expanded_keys);
 }
 
 static inline void apply_correction_values_cmo(vbb_t* vbb, unsigned int start, unsigned int len) {
@@ -348,12 +359,13 @@ void init_vbb_verify(vbb_t* vbb, unsigned int len, const faest_paramset_t* param
   vbb->party        = VERIFIER;
   vbb->params       = params;
   vbb->iv           = dsignature_iv(sig, params);
-  vbb->com_hash     = calloc(MAX_LAMBDA_BYTES * 2, sizeof(uint8_t));
   vbb->full_size    = len >= ell_hat;
   vbb->sig          = sig;
   vbb->row_count    = row_count;
-  vbb->vole_cache   = calloc(row_count, lambda_bytes);
   vbb->column_count = column_count;
+  /* These are set up using init_stack_allocations_verify as they become stack allocations
+  vbb->com_hash     = calloc(MAX_LAMBDA_BYTES * 2, sizeof(uint8_t));
+  vbb->vole_cache   = calloc(row_count, lambda_bytes);
   vbb->Dtilde_buf   = malloc(lambda_bytes + UNIVERSAL_HASH_B);
   vbb->v_buf        = malloc(lambda_bytes);
 
@@ -361,6 +373,7 @@ void init_vbb_verify(vbb_t* vbb, unsigned int len, const faest_paramset_t* param
   if (!is_em_variant(vbb->params->faest_paramid)) {
     vbb->vk_buf = malloc(lambda_bytes);
   }
+  */
 
   const uint8_t* chall3 = dsignature_chall_3(vbb->sig, vbb->params);
   const uint8_t* pdec[MAX_TAU];
@@ -374,6 +387,16 @@ void init_vbb_verify(vbb_t* vbb, unsigned int len, const faest_paramset_t* param
     apply_correction_values_cmo(vbb, 0, lambda);
   }
 }
+
+void init_stack_allocations_verify(vbb_t* vbb, uint8_t* hcom, uint8_t* q, uint8_t* dtilde, uint8_t* v_buffer, uint8_t* vk_buffer, uint8_t* vk_cache){
+  vbb->com_hash   = hcom;
+  vbb->vole_cache = q;
+  vbb->Dtilde_buf = dtilde;
+  vbb->v_buf      = v_buffer;
+  vbb->vk_buf     = vk_buffer;
+  vbb->vk_cache   = vk_cache;
+}
+
 
 void prepare_hash_verify(vbb_t* vbb) {
   if (vbb->full_size) {
@@ -513,6 +536,7 @@ const uint8_t* get_com_hash(vbb_t* vbb) {
   return vbb->com_hash;
 }
 
+/* Stack allocation, hence not needed anymore
 void clean_vbb(vbb_t* vbb) {
   free(vbb->vole_cache);
   free(vbb->com_hash);
@@ -535,6 +559,7 @@ void clean_vbb(vbb_t* vbb) {
     }
   }
 }
+*/
 
 // V_k cache
 
@@ -544,7 +569,7 @@ static void setup_vk_cache(vbb_t* vbb) {
     return;
   }
 
-  vbb->vk_cache = calloc(vbb->params->faest_param.Lke, lambda_bytes);
+  //vbb->vk_cache = calloc(vbb->params->faest_param.Lke, lambda_bytes);
 
   for (unsigned int i = 0; i < vbb->params->faest_param.Lke; i++) {
     unsigned int offset = i * lambda_bytes;

@@ -39,8 +39,11 @@ struct vbb_t {
   uint8_t* vk_cache;
 };
 
+// Signer
 void init_vbb_sign(vbb_t* vbb, unsigned int len, const uint8_t* root_key, const uint8_t* iv,
                    uint8_t* c, const faest_paramset_t* params);
+void init_stack_allocations_sign(vbb_t* vbb, uint8_t* hcom, uint8_t* u, uint8_t* v,
+                                 uint8_t* v_buffer, uint8_t* vk_buffer, uint8_t* vk_cache);
 void clean_vbb(vbb_t* vbb);
 void prepare_hash_sign(vbb_t* vbb);
 void prepare_aes_sign(vbb_t* vbb);
@@ -56,6 +59,8 @@ void vector_open_ondemand(vbb_t* vbb, unsigned int idx, const uint8_t* s_, uint8
 // Verifier
 void init_vbb_verify(vbb_t* vbb, unsigned int len, const faest_paramset_t* params,
                      const uint8_t* sig);
+void init_stack_allocations_verify(vbb_t* vbb, uint8_t* hcom, uint8_t* q, uint8_t* dtilde,
+                                   uint8_t* v_buffer, uint8_t* vk_buffer, uint8_t* vk_cache);
 void prepare_hash_verify(vbb_t* vbb);
 const uint8_t* get_vole_q_hash(vbb_t* vbb, unsigned int idx);
 void prepare_aes_verify(vbb_t* vbb);

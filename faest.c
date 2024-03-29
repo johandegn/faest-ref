@@ -281,7 +281,19 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
 
   vbb_t vbb;
   // TODO: find a solution for setting argument (dynamic or static)?
-  init_vbb_sign(&vbb, ell_hat, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
+  const unsigned int len = ell_hat;
+  uint8_t* hcom          = alloca(MAX_LAMBDA_BYTES * 2);
+  uint8_t* u             = alloca(ell_hat / 8);
+  uint8_t* v_cache       = alloca(len * lambdaBytes);
+  uint8_t* v_buf         = alloca(lambdaBytes);
+  uint8_t* vk_buf        = NULL;
+  uint8_t* vk_cache      = NULL;    
+  if (!(params->faest_paramid > 6)) {
+    vk_buf        = alloca(lambdaBytes);
+    vk_cache      = alloca(params->faest_param.Lke * lambdaBytes);
+  }
+  init_stack_allocations_sign(&vbb, hcom, u, v_cache, v_buf, vk_buf, vk_cache);
+  init_vbb_sign(&vbb, len, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
                  params);
 
   uint8_t chall_1[(5 * MAX_LAMBDA_BYTES) + 8];
@@ -329,7 +341,7 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
     vector_open_ondemand(&vbb, i, s_, signature_pdec(sig, i, params), signature_com(sig, i, params),
                          depth);
   }
-  clean_vbb(&vbb);
+  //clean_vbb(&vbb);
 }
 
 int faest_verify(const uint8_t* msg, size_t msglen, const uint8_t* sig, const uint8_t* owf_input,
@@ -341,7 +353,19 @@ int faest_verify(const uint8_t* msg, size_t msglen, const uint8_t* sig, const ui
   const unsigned int ell_hat     = l + lambda * 2 + UNIVERSAL_HASH_B_BITS;
 
   vbb_t vbb;
-  init_vbb_verify(&vbb, ell_hat, params, sig);
+  const unsigned int len = ell_hat;
+  uint8_t* hcom          = alloca(MAX_LAMBDA_BYTES * 2);
+  uint8_t* q_cache       = alloca(len * lambdaBytes);
+  uint8_t* Dtilde_buf    = alloca(lambdaBytes + UNIVERSAL_HASH_B);
+  uint8_t* v_buf         = alloca(lambdaBytes);
+  uint8_t* vk_buf        = NULL;
+  uint8_t* vk_cache      = NULL;    
+  if (!(params->faest_paramid > 6)) {
+    vk_buf        = alloca(lambdaBytes);
+    vk_cache      = alloca(params->faest_param.Lke * lambdaBytes);
+  }
+  init_stack_allocations_verify(&vbb, hcom, q_cache, Dtilde_buf, v_buf, vk_buf, vk_cache);
+  init_vbb_verify(&vbb, len, params, sig);
 
   uint8_t mu[MAX_LAMBDA_BYTES * 2];
   hash_mu(mu, owf_input, owf_output, params->faest_param.pkSize / 2, msg, msglen, lambda);
@@ -377,7 +401,7 @@ int faest_verify(const uint8_t* msg, size_t msglen, const uint8_t* sig, const ui
   hash_challenge_3(chall_3, chall_2, dsignature_a_tilde(sig, params), b_tilde, lambda);
   free(b_tilde);
   b_tilde = NULL;
-  clean_vbb(&vbb);
+  //clean_vbb(&vbb);
 
   return memcmp(chall_3, dsignature_chall_3(sig, params), lambdaBytes) == 0 ? 0 : -1;
 }
