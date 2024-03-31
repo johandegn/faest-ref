@@ -1851,13 +1851,13 @@ static void em_enc_constraints_Mkey_1_128(const uint8_t* out, const uint8_t* x, 
   // Step: 18, 19
   // TODO: compute these on demand in em_enc_backward_128
   const bf128_t bf_delta = bf128_load(delta);
-  bf128_t* bf_x = faest_aligned_alloc(BF128_ALIGN, sizeof(bf128_t) * 128 * (FAEST_EM_128F_R + 1));
+  bf128_t* bf_x = alloca(sizeof(bf128_t) * 128 * (FAEST_EM_128F_R + 1));
   for (unsigned int i = 0; i < 128 * (FAEST_EM_128F_R + 1); i++) {
     bf_x[i] = bf128_mul_bit(bf_delta, ptr_get_bit(x, i));
   }
 
   // Step 21
-  bf128_t* bf_q_out = faest_aligned_alloc(BF128_ALIGN, sizeof(bf128_t) * FAEST_EM_128F_LAMBDA);
+  bf128_t* bf_q_out = alloca(sizeof(bf128_t) * FAEST_EM_128F_LAMBDA);
   for (unsigned int i = 0; i < FAEST_EM_128F_LAMBDA; i++) {
     bf_q_out[i] =
         bf128_add(bf128_mul_bit(bf_delta, ptr_get_bit(out, i)), *get_vole_aes_128(vbb, i));
@@ -1867,8 +1867,8 @@ static void em_enc_constraints_Mkey_1_128(const uint8_t* out, const uint8_t* x, 
   bf128_t bf_qs_dash[FAEST_EM_128F_Senc];
   em_enc_forward_128_vbb(vbb, bf_x, bf_qs);
   em_enc_backward_128_linear_access_verify(vbb, bf_x, bf_q_out, 0, 1, delta, bf_qs_dash);
-  faest_aligned_free(bf_q_out);
-  faest_aligned_free(bf_x);
+  //faest_aligned_free(bf_q_out);
+  //faest_aligned_free(bf_x);
 
   // Step: 13..14
   bf128_t minus_part = bf128_mul(bf_delta, bf_delta);
@@ -2215,13 +2215,13 @@ static void em_enc_constraints_Mkey_1_192(const uint8_t* out, const uint8_t* x, 
   // Step: 18, 19
   // TODO: compute these on demand in em_enc_backward_192
   const bf192_t bf_delta = bf192_load(delta);
-  bf192_t* bf_x = faest_aligned_alloc(BF192_ALIGN, sizeof(bf192_t) * 192 * (FAEST_EM_192F_R + 1));
+  bf192_t* bf_x = alloca(sizeof(bf192_t) * 192 * (FAEST_EM_192F_R + 1));
   for (unsigned int i = 0; i < 192 * (FAEST_EM_192F_R + 1); i++) {
     bf_x[i] = bf192_mul_bit(bf_delta, ptr_get_bit(x, i));
   }
 
   // Step 21
-  bf192_t* bf_q_out = faest_aligned_alloc(BF192_ALIGN, sizeof(bf192_t) * FAEST_EM_192F_LAMBDA);
+  bf192_t* bf_q_out = alloca(sizeof(bf192_t) * FAEST_EM_192F_LAMBDA);
   for (unsigned int i = 0; i < FAEST_EM_192F_LAMBDA; i++) {
     bf_q_out[i] =
         bf192_add(bf192_mul_bit(bf_delta, ptr_get_bit(out, i)), *get_vole_aes_192(vbb, i));
@@ -2231,8 +2231,8 @@ static void em_enc_constraints_Mkey_1_192(const uint8_t* out, const uint8_t* x, 
   bf192_t bf_qs_dash[FAEST_EM_192F_Senc];
   em_enc_forward_192_vbb(vbb, bf_x, bf_qs);
   em_enc_backward_192_linear_access_verify(vbb, bf_x, bf_q_out, 0, 1, delta, bf_qs_dash);
-  faest_aligned_free(bf_q_out);
-  faest_aligned_free(bf_x);
+  //faest_aligned_free(bf_q_out);
+  //faest_aligned_free(bf_x);
 
   // Step: 13..14
   bf192_t minus_part = bf192_mul(bf_delta, bf_delta);
@@ -2596,13 +2596,13 @@ static void em_enc_constraints_Mkey_1_256(const uint8_t* out, const uint8_t* x, 
   // Step: 18, 19
   // TODO: compute these on demand in em_enc_backward_256
   const bf256_t bf_delta = bf256_load(delta);
-  bf256_t* bf_x = faest_aligned_alloc(BF256_ALIGN, sizeof(bf256_t) * 256 * (FAEST_EM_256F_R + 1));
+  bf256_t* bf_x = alloca(sizeof(bf256_t) * 256 * (FAEST_EM_256F_R + 1));
   for (unsigned int i = 0; i < 256 * (FAEST_EM_256F_R + 1); i++) {
     bf_x[i] = bf256_mul_bit(bf_delta, ptr_get_bit(x, i));
   }
 
   // Step 21
-  bf256_t* bf_q_out = faest_aligned_alloc(BF256_ALIGN, sizeof(bf256_t) * FAEST_EM_256F_LAMBDA);
+  bf256_t* bf_q_out = alloca(sizeof(bf256_t) * FAEST_EM_256F_LAMBDA);
   for (unsigned int i = 0; i < FAEST_EM_256F_LAMBDA; i++) {
     bf_q_out[i] =
         bf256_add(bf256_mul_bit(bf_delta, ptr_get_bit(out, i)), *get_vole_aes_256(vbb, i));
@@ -2612,8 +2612,8 @@ static void em_enc_constraints_Mkey_1_256(const uint8_t* out, const uint8_t* x, 
   bf256_t bf_qs_dash[FAEST_EM_256F_Senc];
   em_enc_forward_256_vbb(vbb, bf_x, bf_qs);
   em_enc_backward_256_linear_access_verify(vbb, bf_x, bf_q_out, 0, 1, delta, bf_qs_dash);
-  faest_aligned_free(bf_q_out);
-  faest_aligned_free(bf_x);
+  //faest_aligned_free(bf_q_out);
+  //faest_aligned_free(bf_x);
 
   // Step: 13..14
   bf256_t minus_part = bf256_mul(bf_delta, bf_delta);
