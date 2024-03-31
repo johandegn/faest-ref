@@ -479,8 +479,9 @@ BOOST_AUTO_TEST_CASE(test_prg_256) {
 BOOST_AUTO_TEST_CASE(test_extend_witness_aes128) {
   std::array<uint8_t, 200> extended_witness = {};
   faest_paramset_t params = faest_get_paramset(FAEST_128S); // Just using the FAEST-128s
+  uint8_t* w = (uint8_t*)malloc((params.faest_param.l + 7) / 8);
   uint8_t* extwit =
-      aes_extend_witness(aes_ctr_128_tv::key.data(), aes_ctr_128_tv::in.data(), &params);
+      aes_extend_witness(aes_ctr_128_tv::key.data(), aes_ctr_128_tv::in.data(), &params, w);
   memcpy(extended_witness.data(), extwit, 200);
   free(extwit);
 
@@ -490,8 +491,9 @@ BOOST_AUTO_TEST_CASE(test_extend_witness_aes128) {
 BOOST_AUTO_TEST_CASE(test_extend_witness_rijndael_em128) {
   std::array<uint8_t, 160> extended_witness = {};
   faest_paramset_t params = faest_get_paramset(FAEST_EM_128S); // Just using the FAEST-128s
+  uint8_t* w = (uint8_t*)malloc((params.faest_param.l + 7) / 8);
   uint8_t* extwit =
-      aes_extend_witness(rijndael_em_128_tv::key.data(), rijndael_em_128_tv::in.data(), &params);
+      aes_extend_witness(rijndael_em_128_tv::key.data(), rijndael_em_128_tv::in.data(), &params, w);
   memcpy(extended_witness.data(), extwit, 160);
   free(extwit);
 
@@ -501,8 +503,9 @@ BOOST_AUTO_TEST_CASE(test_extend_witness_rijndael_em128) {
 BOOST_AUTO_TEST_CASE(test_extend_witness_aes192) {
   std::array<uint8_t, 408> extended_witness = {};
   faest_paramset_t params = faest_get_paramset(FAEST_192S); // Just using the FAEST-128s
+  uint8_t* w = (uint8_t*)malloc((params.faest_param.l + 7) / 8);
   uint8_t* extwit =
-      aes_extend_witness(aes_ctr_192_tv::key.data(), aes_ctr_192_tv::in.data(), &params);
+      aes_extend_witness(aes_ctr_192_tv::key.data(), aes_ctr_192_tv::in.data(), &params, w);
   memcpy(extended_witness.data(), extwit, 408);
   free(extwit);
 
@@ -512,8 +515,9 @@ BOOST_AUTO_TEST_CASE(test_extend_witness_aes192) {
 BOOST_AUTO_TEST_CASE(test_extend_witness_rijndael_em192) {
   std::array<uint8_t, 288> extended_witness = {};
   faest_paramset_t params = faest_get_paramset(FAEST_EM_192S); // Just using the FAEST-192s
+  uint8_t* w = (uint8_t*)malloc((params.faest_param.l + 7) / 8);
   uint8_t* extwit =
-      aes_extend_witness(rijndael_em_192_tv::key.data(), rijndael_em_192_tv::in.data(), &params);
+      aes_extend_witness(rijndael_em_192_tv::key.data(), rijndael_em_192_tv::in.data(), &params, w);
   memcpy(extended_witness.data(), extwit, 288);
   free(extwit);
 
@@ -523,8 +527,9 @@ BOOST_AUTO_TEST_CASE(test_extend_witness_rijndael_em192) {
 BOOST_AUTO_TEST_CASE(test_extend_witness_aes256) {
   std::array<uint8_t, 500> extended_witness = {};
   faest_paramset_t params = faest_get_paramset(FAEST_256S); // Just using the FAEST-128s
+  uint8_t* w = (uint8_t*)malloc((params.faest_param.l + 7) / 8);
   uint8_t* extwit =
-      aes_extend_witness(aes_ctr_256_tv::key.data(), aes_ctr_256_tv::in.data(), &params);
+      aes_extend_witness(aes_ctr_256_tv::key.data(), aes_ctr_256_tv::in.data(), &params, w);
   memcpy(extended_witness.data(), extwit, 500);
   free(extwit);
 
@@ -534,8 +539,9 @@ BOOST_AUTO_TEST_CASE(test_extend_witness_aes256) {
 BOOST_AUTO_TEST_CASE(test_extend_witness_rijndael_em256) {
   std::array<uint8_t, 448> extended_witness = {};
   faest_paramset_t params = faest_get_paramset(FAEST_EM_256S); // Just using the FAEST-256s
+  uint8_t* w = (uint8_t*)malloc((params.faest_param.l + 7) / 8);
   uint8_t* extwit =
-      aes_extend_witness(rijndael_em_256_tv::key.data(), rijndael_em_256_tv::in.data(), &params);
+      aes_extend_witness(rijndael_em_256_tv::key.data(), rijndael_em_256_tv::in.data(), &params, w);
   memcpy(extended_witness.data(), extwit, 448);
   free(extwit);
 

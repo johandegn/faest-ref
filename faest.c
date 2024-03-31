@@ -315,7 +315,8 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
     }
     H1_final(&h1_ctx_1, h_v, lambdaBytes * 2);
   }
-  uint8_t* w = aes_extend_witness(owf_key, owf_input, params);
+  uint8_t* w = alloca((l + 7) / 8);
+  w = aes_extend_witness(owf_key, owf_input, params, w);
   xor_u8_array(w, get_vole_u(&vbb), signature_d(sig, params), ell_bytes);
 
   uint8_t chall_2[3 * MAX_LAMBDA_BYTES + 8];
@@ -327,8 +328,8 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
   aes_prove(w, &vbb, owf_input, owf_output, chall_2, signature_a_tilde(sig, params), b_tilde,
             params);
 
-  free(w);
-  w = NULL;
+  //free(w);
+  //w = NULL;
 
   hash_challenge_3(signature_chall_3(sig, params), chall_2, signature_a_tilde(sig, params), b_tilde,
                    lambda);
