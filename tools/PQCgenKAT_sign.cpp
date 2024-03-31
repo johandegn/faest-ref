@@ -120,7 +120,7 @@ int main() {
 
     std::vector<uint8_t> sm;
     sm.resize(msg.size() + CRYPTO_BYTES);
-    unsigned long long smlen = sm.size();
+    size_t smlen = sm.size();
 
     ret = crypto_sign(sm.data(), &smlen, msg.data(), msg.size(), sk.data());
     if (ret != 0) {
@@ -135,7 +135,7 @@ int main() {
 
     std::vector<uint8_t> msg1;
     msg1.resize(msg.size());
-    unsigned long long msg1len = msg1.size();
+    size_t msg1len = msg1.size();
 
     ret = crypto_sign_open(msg1.data(), &msg1len, sm.data(), smlen, pk.data());
     if (ret != 0) {
