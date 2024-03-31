@@ -12,6 +12,7 @@
 #if defined(HAVE_RANDOMBYTES) || defined(SUPERCOP)
 #if defined(PQCLEAN)
 // randombytes from the PQClean
+#include "randombytes.h"
 extern int randombytes(uint8_t* x, size_t xlen);
 #else
 // randombytes from the NIST framework / SUPERCOP
