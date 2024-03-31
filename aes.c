@@ -12,6 +12,10 @@
 #include "compat.h"
 #include "utils.h"
 
+#if defined(PQCLEAN)
+#include "aes-publicinputs.h"
+#endif
+
 #if defined(HAVE_OPENSSL)
 #include <openssl/evp.h>
 #endif
@@ -295,7 +299,87 @@ int rijndael256_encrypt_block(const aes_round_keys_t* key, const uint8_t* plaint
 }
 
 void prg(const uint8_t* key, const uint8_t* iv, uint8_t* out, unsigned int seclvl, size_t outlen) {
-#if !defined(HAVE_OPENSSL)
+#if defined(HAVE_OPENSSL)
+  const EVP_CIPHER* cipher;
+  switch (seclvl) {
+  case 256:
+    cipher = EVP_aes_256_ctr();
+    break;
+  case 192:
+    cipher = EVP_aes_192_ctr();
+    break;
+  default:
+    cipher = EVP_aes_128_ctr();
+    break;
+  }
+
+  EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+  assert(ctx);
+
+  EVP_EncryptInit_ex(ctx, cipher, NULL, key, iv);
+
+  static const uint8_t plaintext[16] = {0};
+
+  int len = 0;
+  for (size_t idx = 0; idx < outlen / 16; idx += 1, out += 16) {
+    EVP_EncryptUpdate(ctx, out, &len, plaintext, sizeof(plaintext));
+  }
+  if (outlen % 16) {
+    EVP_EncryptUpdate(ctx, out, &len, plaintext, outlen % 16);
+  }
+  EVP_EncryptFinal_ex(ctx, out, &len);
+  EVP_CIPHER_CTX_free(ctx);
+#elif defined(PQCLEAN)
+  uint8_t internal_iv[16];
+  memcpy(internal_iv, iv, sizeof(internal_iv));
+
+  switch (seclvl) {
+  case 256:
+    aes256ctx_publicinputs ctx;
+    aes256_ecb_keyexp_publicinputs(&ctx, key);
+    for (; outlen >= 16; outlen -= 16, out += 16) {
+      aes256_ecb_publicinputs(out, internal_iv, 1, &ctx);
+      aes_increment_iv(internal_iv);
+    }
+    if (outlen % 16) {
+      uint8_t tmp[16];
+      aes256_ecb_publicinputs(tmp, internal_iv, 1, &ctx);
+      memcpy(out, tmp, outlen);
+    }
+    aes256_ctx_release_publicinputs(&ctx);
+    break;
+  case 192:
+    aes192ctx_publicinputs ctx;
+    aes192_ecb_keyexp_publicinputs(&ctx, key);
+    for (; outlen >= 16; outlen -= 16, out += 16) {
+      aes192_ecb_publicinputs(out, internal_iv, 1, &ctx);
+      aes_increment_iv(internal_iv);
+    }
+    if (outlen % 16) {
+      uint8_t tmp[16];
+      aes192_ecb_publicinputs(tmp, internal_iv, 1, &ctx);
+      memcpy(out, tmp, outlen);
+    }
+    aes192_ctx_release_publicinputs(&ctx);
+    break;
+  default:
+    aes128ctx_publicinputs ctx;
+    aes128_ecb_keyexp_publicinputs(&ctx, key);
+    for (; outlen >= 16; outlen -= 16, out += 16) {
+      aes128_ecb_publicinputs(out, internal_iv, 1, &ctx);
+      aes_increment_iv(internal_iv);
+    }
+    if (outlen % 16) {
+      uint8_t tmp[16];
+      aes128_ecb_publicinputs(tmp, internal_iv, 1, &ctx);
+      memcpy(out, tmp, outlen);
+    }
+    aes128_ctx_release_publicinputs(&ctx);
+    break;
+  }
+
+  
+#else
   uint8_t internal_iv[16];
   memcpy(internal_iv, iv, sizeof(internal_iv));
 
@@ -357,36 +441,6 @@ void prg(const uint8_t* key, const uint8_t* iv, uint8_t* out, unsigned int seclv
     }
     return;
   }
-#else
-  const EVP_CIPHER* cipher;
-  switch (seclvl) {
-  case 256:
-    cipher = EVP_aes_256_ctr();
-    break;
-  case 192:
-    cipher = EVP_aes_192_ctr();
-    break;
-  default:
-    cipher = EVP_aes_128_ctr();
-    break;
-  }
-
-  EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
-  assert(ctx);
-
-  EVP_EncryptInit_ex(ctx, cipher, NULL, key, iv);
-
-  static const uint8_t plaintext[16] = {0};
-
-  int len = 0;
-  for (size_t idx = 0; idx < outlen / 16; idx += 1, out += 16) {
-    EVP_EncryptUpdate(ctx, out, &len, plaintext, sizeof(plaintext));
-  }
-  if (outlen % 16) {
-    EVP_EncryptUpdate(ctx, out, &len, plaintext, outlen % 16);
-  }
-  EVP_EncryptFinal_ex(ctx, out, &len);
-  EVP_CIPHER_CTX_free(ctx);
 #endif
 }
 
