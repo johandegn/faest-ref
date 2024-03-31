@@ -14,7 +14,7 @@
 #if defined(WITH_SHAKE_S390_CPACF)
 /* use the KIMD/KLMD instructions from CPACF for SHAKE support on S390 */
 #include "sha3/s390_cpacf.h"
-#elif defined(OQS) || (0 && defined(PQCLEAN))
+#elif defined(OQS) || defined(PQCLEAN)
 #if defined(OQS)
 /* use OQS's SHAKE implementation */
 #include <oqs/sha3.h>
