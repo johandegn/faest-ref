@@ -20,13 +20,13 @@ ATTR_CONST ATTR_ALWAYS_INLINE static inline bool is_em_variant(faest_paramid_t i
   return id > 6;
 }
 
-ATTR_CONST ATTR_ALWAYS_INLINE static bool is_column_cached(vbb_t* vbb, unsigned int index) {
+ATTR_CONST ATTR_ALWAYS_INLINE static inline bool is_column_cached(vbb_t* vbb, unsigned int index) {
   bool above_cache_start = index >= vbb->cache_idx;
   bool below_cache_end = index < vbb->cache_idx + vbb->column_count;
   return above_cache_start && below_cache_end;
 }
 
-ATTR_CONST ATTR_ALWAYS_INLINE static bool is_row_cached(vbb_t* vbb, unsigned int index) {
+ATTR_CONST ATTR_ALWAYS_INLINE static inline bool is_row_cached(vbb_t* vbb, unsigned int index) {
   bool above_cache_start = index >= vbb->cache_idx;
   bool below_cache_end = index < vbb->cache_idx + vbb->row_count;
   return above_cache_start && below_cache_end;
