@@ -76,13 +76,18 @@ static void ConstructVoleCMO(const uint8_t* iv, vec_com_t* vec_com, unsigned int
     // Seed expansion
     prg(sd, iv, r, lambda, out_len_bytes);
     if (u != NULL) {
-      xor_u8_array(u, r, u, out_len_bytes);
+      int factor_32 = out_len_bytes / 4;
+      xor_u32_array((uint32_t*)u, (uint32_t*)r, (uint32_t*)u, factor_32);
+      xor_u8_array(u + factor_32 * 4, r + factor_32 * 4, u + factor_32 * 4, out_len_bytes - factor_32 * 4);
     }
     if (v != NULL) {
       for (unsigned int j = begin; j < end; j++) {
         // Apply r if the j'th bit is set
         if ((i >> j) & 1) {
-          xor_u8_array(V_CMO(j), r, V_CMO(j), out_len_bytes);
+          int factor_32 = out_len_bytes / 4;
+          xor_u32_array((uint32_t*)V_CMO(j), (uint32_t*)r, (uint32_t*)V_CMO(j), factor_32);
+          xor_u8_array(V_CMO(j) + factor_32 * 4, r + factor_32 * 4, V_CMO(j) + factor_32 * 4,
+                       out_len_bytes - factor_32 * 4);
         }
       }
     }
