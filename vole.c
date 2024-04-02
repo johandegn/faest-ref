@@ -47,7 +47,7 @@ static void ConstructVoleCMO(const uint8_t* iv, vec_com_t* vec_com, unsigned int
   const unsigned int lambda_bytes  = lambda / 8;
   unsigned int len                 = end - begin;
 
-#define V_CMO(idx) (v + ((idx)-begin) * out_len_bytes)
+#define V_CMO(idx) (v + ((idx) - begin) * out_len_bytes)
 
   uint8_t* sd  = alloca(lambda_bytes);
   uint8_t* com = alloca(lambda_bytes * 2);
@@ -78,7 +78,8 @@ static void ConstructVoleCMO(const uint8_t* iv, vec_com_t* vec_com, unsigned int
     if (u != NULL) {
       int factor_32 = out_len_bytes / 4;
       xor_u32_array((uint32_t*)u, (uint32_t*)r, (uint32_t*)u, factor_32);
-      xor_u8_array(u + factor_32 * 4, r + factor_32 * 4, u + factor_32 * 4, out_len_bytes - factor_32 * 4);
+      xor_u8_array(u + factor_32 * 4, r + factor_32 * 4, u + factor_32 * 4,
+                   out_len_bytes - factor_32 * 4);
     }
     if (v != NULL) {
       for (unsigned int j = begin; j < end; j++) {
@@ -220,7 +221,7 @@ void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
 
   if (vole_mode.mode != EXCLUDE_U_HCOM_C) {
     H1_final(&h1_ctx, vole_mode.hcom, lambda_bytes * 2);
-    //free(h);
+    // free(h);
   }
 
   /*
@@ -266,14 +267,14 @@ void partial_vole_commit_rmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
 
 // reconstruction
 static void ReconstructVoleCMO(const uint8_t* iv, vec_com_rec_t* vec_com_rec, unsigned int lambda,
-                               unsigned int out_len_bytes, uint8_t* q, uint8_t* h, unsigned int begin,
-                               unsigned int end) {
+                               unsigned int out_len_bytes, uint8_t* q, uint8_t* h,
+                               unsigned int begin, unsigned int end) {
   unsigned int depth               = vec_com_rec->depth;
   const unsigned int num_instances = 1 << depth;
   const unsigned int lambda_bytes  = lambda / 8;
   unsigned int len                 = end - begin;
 
-#define Q_CMO(idx) (q + ((idx)-begin) * out_len_bytes)
+#define Q_CMO(idx) (q + ((idx) - begin) * out_len_bytes)
 
   H1_context_t h1_ctx;
   if (h != NULL) {
@@ -328,10 +329,10 @@ static void ReconstructVoleCMO(const uint8_t* iv, vec_com_rec_t* vec_com_rec, un
   }
 }
 
-void partial_vole_reconstruct_cmo(const uint8_t* iv, const uint8_t* chall, const uint8_t* const* pdec, 
-                                  const uint8_t* const* com_j, unsigned int ellhat,
-                                  unsigned int start, unsigned int len,
-                                  verify_vole_mode_ctx_t vole_mode, 
+void partial_vole_reconstruct_cmo(const uint8_t* iv, const uint8_t* chall,
+                                  const uint8_t* const* pdec, const uint8_t* const* com_j,
+                                  unsigned int ellhat, unsigned int start, unsigned int len,
+                                  verify_vole_mode_ctx_t vole_mode,
                                   const faest_paramset_t* params) {
   unsigned int lambda       = params->faest_param.lambda;
   unsigned int lambda_bytes = lambda / 8;
@@ -349,11 +350,11 @@ void partial_vole_reconstruct_cmo(const uint8_t* iv, const uint8_t* chall, const
 
   unsigned int max_depth = MAX(k0, k1);
   vec_com_rec_t vec_com_rec;
-  vec_com_rec.b       = alloca(max_depth * sizeof(uint8_t));
-  vec_com_rec.nodes   = alloca(max_depth * lambda_bytes);
+  vec_com_rec.b     = alloca(max_depth * sizeof(uint8_t));
+  vec_com_rec.nodes = alloca(max_depth * lambda_bytes);
   memset(vec_com_rec.nodes, 0, max_depth * lambda_bytes);
   vec_com_rec.com_j   = alloca(lambda_bytes * 2);
-  uint8_t* tree_nodes = alloca(lambda_bytes * (max_depth - 1));
+  uint8_t* tree_nodes = alloca(lambda_bytes * (max_depth - 1) * 2);
 
   uint8_t* h = NULL;
   if (vole_mode.mode != EXCLUDE_HCOM) {
@@ -385,8 +386,7 @@ void partial_vole_reconstruct_cmo(const uint8_t* iv, const uint8_t* chall, const
       uint8_t chalout[MAX_DEPTH];
       ChalDec(chall, i, k0, tau0, k1, tau1, chalout);
       vector_reconstruction(pdec[i], com_j[i], chalout, lambda, depth, tree_nodes, &vec_com_rec);
-      ReconstructVoleCMO(iv, &vec_com_rec, lambda, ellhat_bytes, q_ptr, h,
-                         lbegin, lend);
+      ReconstructVoleCMO(iv, &vec_com_rec, lambda, ellhat_bytes, q_ptr, h, lbegin, lend);
       if (vole_mode.mode != EXCLUDE_HCOM) {
         H1_update(&h1_ctx, h, lambda_bytes * 2);
       }
@@ -404,7 +404,7 @@ void partial_vole_reconstruct_cmo(const uint8_t* iv, const uint8_t* chall, const
   free(tree_nodes);
   */
   if (vole_mode.mode != EXCLUDE_HCOM) {
-    //free(h);
+    // free(h);
     H1_final(&h1_ctx, vole_mode.hcom, lambda_bytes * 2);
   }
 }
@@ -470,11 +470,11 @@ void partial_vole_reconstruct_rmo(const uint8_t* iv, const uint8_t* chall,
 
   unsigned int max_depth = MAX(k0, k1);
   vec_com_rec_t vec_com_rec;
-  vec_com_rec.b       = alloca(max_depth * sizeof(uint8_t));
-  vec_com_rec.nodes   = alloca(max_depth * lambda_bytes);
+  vec_com_rec.b     = alloca(max_depth * sizeof(uint8_t));
+  vec_com_rec.nodes = alloca(max_depth * lambda_bytes);
   memset(vec_com_rec.nodes, 0, max_depth * lambda_bytes);
   vec_com_rec.com_j   = alloca(lambda_bytes * 2);
-  uint8_t* tree_nodes = alloca(lambda_bytes * (max_depth - 1));
+  uint8_t* tree_nodes = alloca(lambda_bytes * (max_depth - 1) * 2);
 
   memset(q, 0, len * lambda_bytes);
 

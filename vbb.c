@@ -22,16 +22,15 @@ ATTR_CONST ATTR_ALWAYS_INLINE static inline bool is_em_variant(faest_paramid_t i
 
 ATTR_CONST ATTR_ALWAYS_INLINE static inline bool is_column_cached(vbb_t* vbb, unsigned int index) {
   bool above_cache_start = index >= vbb->cache_idx;
-  bool below_cache_end = index < vbb->cache_idx + vbb->column_count;
+  bool below_cache_end   = index < vbb->cache_idx + vbb->column_count;
   return above_cache_start && below_cache_end;
 }
 
 ATTR_CONST ATTR_ALWAYS_INLINE static inline bool is_row_cached(vbb_t* vbb, unsigned int index) {
   bool above_cache_start = index >= vbb->cache_idx;
-  bool below_cache_end = index < vbb->cache_idx + vbb->row_count;
+  bool below_cache_end   = index < vbb->cache_idx + vbb->row_count;
   return above_cache_start && below_cache_end;
 }
-
 
 static void recompute_hash_sign(vbb_t* vbb, unsigned int start, unsigned int end) {
   const unsigned int lambda = vbb->params->faest_param.lambda;
@@ -39,10 +38,8 @@ static void recompute_hash_sign(vbb_t* vbb, unsigned int start, unsigned int end
   const unsigned int ellhat = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
   unsigned int capped_end   = MIN(end, lambda);
 
-  partial_vole_commit_cmo(vbb->root_key, vbb->iv, ellhat, 
-                          start, capped_end,
-                          vole_mode_v(vbb->vole_cache),
-                          vbb->params);
+  partial_vole_commit_cmo(vbb->root_key, vbb->iv, ellhat, start, capped_end,
+                          vole_mode_v(vbb->vole_cache), vbb->params);
   vbb->cache_idx = start;
 }
 
@@ -50,7 +47,7 @@ static void recompute_aes_sign(vbb_t* vbb, unsigned int start, unsigned int len)
   const unsigned int lambda = vbb->params->faest_param.lambda;
   const unsigned int ell    = vbb->params->faest_param.l;
 
-  if(start >= ell){
+  if (start >= ell) {
     start = start - len + 1;
   }
   if (len >= ell + lambda) {
@@ -81,14 +78,16 @@ void init_vbb_sign(vbb_t* vbb, unsigned int len, const uint8_t* root_key, const 
   vbb->full_size    = len >= ellhat;
   vbb->row_count    = row_count;
   vbb->column_count = column_count;
-  
-  sign_vole_mode_ctx_t mode = vbb->full_size ? vole_mode_all_sign(vbb->vole_cache, vbb->vole_U, vbb->com_hash, c)
-                                    : vole_mode_u_hcom_c(vbb->vole_U, vbb->com_hash, c);
+
+  sign_vole_mode_ctx_t mode =
+      vbb->full_size ? vole_mode_all_sign(vbb->vole_cache, vbb->vole_U, vbb->com_hash, c)
+                     : vole_mode_u_hcom_c(vbb->vole_U, vbb->com_hash, c);
 
   partial_vole_commit_cmo(vbb->root_key, vbb->iv, ellhat, 0, lambda, mode, vbb->params);
 }
 
-void init_stack_allocations_sign(vbb_t* vbb, uint8_t* hcom, uint8_t* u, uint8_t* v, uint8_t* v_buffer, uint8_t* vk_buffer, uint8_t* vk_cache){
+void init_stack_allocations_sign(vbb_t* vbb, uint8_t* hcom, uint8_t* u, uint8_t* v,
+                                 uint8_t* v_buffer, uint8_t* vk_buffer, uint8_t* vk_cache) {
   vbb->com_hash   = hcom;
   vbb->vole_U     = u;
   vbb->vole_cache = v;
@@ -190,10 +189,8 @@ static void recompute_hash_verify(vbb_t* vbb, unsigned int start, unsigned int l
   const uint8_t* com[MAX_TAU];
   setup_pdec_com(vbb, pdec, com);
 
-  partial_vole_reconstruct_cmo(vbb->iv, chall3, pdec, com, ell_hat,
-                               start, amount,
-                               vole_mode_q(vbb->vole_cache),
-                               vbb->params);
+  partial_vole_reconstruct_cmo(vbb->iv, chall3, pdec, com, ell_hat, start, amount,
+                               vole_mode_q(vbb->vole_cache), vbb->params);
   apply_correction_values_cmo(vbb, start, amount);
   vbb->cache_idx = start;
 }
@@ -312,7 +309,7 @@ static void recompute_aes_verify(vbb_t* vbb, unsigned int start, unsigned int le
   const unsigned int ell     = vbb->params->faest_param.l;
   const unsigned int ell_hat = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
 
-  if(start >= ell){
+  if (start >= ell) {
     start = start - len + 1;
   }
   if (len >= ell + lambda) {
@@ -352,21 +349,23 @@ void init_vbb_verify(vbb_t* vbb, unsigned int len, const faest_paramset_t* param
   vbb->row_count    = row_count;
   vbb->column_count = column_count;
 
-
   const uint8_t* chall3 = dsignature_chall_3(vbb->sig, vbb->params);
   const uint8_t* pdec[MAX_TAU];
   const uint8_t* com[MAX_TAU];
   setup_pdec_com(vbb, pdec, com);
 
-  verify_vole_mode_ctx_t vole_mode = (vbb->full_size) ? vole_mode_all_verify(vbb->vole_cache, vbb->com_hash)
-                                                      : vole_mode_hcom(vbb->com_hash);
-  partial_vole_reconstruct_cmo(vbb->iv, chall3, pdec, com, ell_hat, 0, lambda, vole_mode, vbb->params);
+  verify_vole_mode_ctx_t vole_mode = (vbb->full_size)
+                                         ? vole_mode_all_verify(vbb->vole_cache, vbb->com_hash)
+                                         : vole_mode_hcom(vbb->com_hash);
+  partial_vole_reconstruct_cmo(vbb->iv, chall3, pdec, com, ell_hat, 0, lambda, vole_mode,
+                               vbb->params);
   if (vbb->full_size) {
     apply_correction_values_cmo(vbb, 0, lambda);
   }
 }
 
-void init_stack_allocations_verify(vbb_t* vbb, uint8_t* hcom, uint8_t* q, uint8_t* dtilde, uint8_t* v_buffer, uint8_t* vk_buffer, uint8_t* vk_cache){
+void init_stack_allocations_verify(vbb_t* vbb, uint8_t* hcom, uint8_t* q, uint8_t* dtilde,
+                                   uint8_t* v_buffer, uint8_t* vk_buffer, uint8_t* vk_cache) {
   vbb->com_hash   = hcom;
   vbb->vole_cache = q;
   vbb->Dtilde_buf = dtilde;
@@ -374,7 +373,6 @@ void init_stack_allocations_verify(vbb_t* vbb, uint8_t* hcom, uint8_t* q, uint8_
   vbb->vk_buf     = vk_buffer;
   vbb->vk_cache   = vk_cache;
 }
-
 
 void prepare_hash_verify(vbb_t* vbb) {
   if (vbb->full_size) {
@@ -442,7 +440,6 @@ const uint8_t* get_vole_q_hash(vbb_t* vbb, unsigned int idx) {
   const unsigned int ell           = vbb->params->faest_param.l;
   const unsigned int ell_hat       = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
   const unsigned int ell_hat_bytes = (ell_hat + 7) / 8;
-
 
   if (!is_column_cached(vbb, idx)) {
     unsigned int cmo_budget = vbb->column_count;
