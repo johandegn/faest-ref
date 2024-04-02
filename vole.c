@@ -161,7 +161,7 @@ void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
 
   uint8_t* expanded_keys = alloca(tau * lambda_bytes);
   prg(rootKey, iv, expanded_keys, lambda, lambda_bytes * tau);
-  uint8_t* path = alloca(lambda_bytes * max_depth);
+  uint8_t* path = alloca(lambda_bytes * max_depth * 2);
 
   H1_context_t h1_ctx;
   uint8_t* h = NULL;
@@ -245,7 +245,7 @@ void partial_vole_commit_rmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
   uint8_t* expanded_keys = alloca(tau * lambda_bytes);
   prg(rootKey, iv, expanded_keys, lambda, lambda_bytes * tau);
 
-  uint8_t* path = alloca(lambda_bytes * max_depth);
+  uint8_t* path = alloca(lambda_bytes * max_depth * 2);
   vec_com_t vec_com;
   memset(v, 0, ((size_t)len) * (size_t)lambda_bytes);
 

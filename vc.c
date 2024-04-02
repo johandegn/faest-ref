@@ -50,26 +50,32 @@ void get_sd_com(vec_com_t* vec_com, const uint8_t* iv, uint32_t lambda, unsigned
   unsigned int path_index = vec_com->path.index;
   uint8_t* path_nodes     = vec_com->path.nodes;
   if (path_nodes != NULL && !vec_com->path.empty) {
-    for (; i < vec_com->depth; i++) {
+    for (; i < vec_com->depth;) {
+      i++;
       center = (hi - lo) / 2 + lo;
       if (index <= center) { // Left
+        hi = center;
         if (path_index > center)
           break;
-        hi = center;
       } else { // Right
+        lo = center + 1;
         if (path_index < center + 1)
           break;
-        lo = center + 1;
       }
     }
   }
 
   // Set starting node
   uint8_t* node;
-  if (i > 0)
-    node = path_nodes + (i - 1) * lambda_bytes;
-  else
+  if (i > 0) {
+    node = path_nodes + (i - 1) * lambda_bytes * 2;
+    // if last node was right
+    if (hi != center) {
+      node += lambda_bytes;
+    }
+  } else {
     node = vec_com->rootKey;
+  }
 
   // Continue computing until leaf is reached
   for (; i < vec_com->depth; i++) {
@@ -84,7 +90,7 @@ void get_sd_com(vec_com_t* vec_com, const uint8_t* iv, uint32_t lambda, unsigned
       lo   = center + 1;
     }
     if (path_nodes != NULL) {
-      memcpy(path_nodes + i * lambda_bytes, node, lambda_bytes);
+      memcpy(path_nodes + i * lambda_bytes * 2, node, lambda_bytes * 2);
     }
   }
 
