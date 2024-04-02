@@ -29,7 +29,8 @@ ATTR_CONST ATTR_ALWAYS_INLINE inline sign_vole_mode_ctx_t vole_mode_all_sign(uin
   assert(u != NULL);
   assert(hcom != NULL);
   assert(c != NULL);
-  return (sign_vole_mode_ctx_t){.mode = INCLUDE_ALL, .v = v, .u = u, .hcom = hcom, .c = c};
+  sign_vole_mode_ctx_t ctx = {INCLUDE_ALL, v, u, hcom, c};
+  return ctx;
 }
 
 ATTR_CONST ATTR_ALWAYS_INLINE inline sign_vole_mode_ctx_t vole_mode_u_hcom_c(uint8_t* u, uint8_t* hcom,
@@ -37,12 +38,14 @@ ATTR_CONST ATTR_ALWAYS_INLINE inline sign_vole_mode_ctx_t vole_mode_u_hcom_c(uin
   assert(u != NULL);
   assert(hcom != NULL);
   assert(c != NULL);
-  return (sign_vole_mode_ctx_t){.mode = EXCLUDE_V, .v = NULL, .u = u, .hcom = hcom, .c = c};
+  sign_vole_mode_ctx_t ctx = {EXCLUDE_V, NULL, u, hcom, c};
+  return ctx;
 }
 
 ATTR_CONST ATTR_ALWAYS_INLINE inline sign_vole_mode_ctx_t vole_mode_v(uint8_t* v) {
   assert(v != NULL);
-  return (sign_vole_mode_ctx_t){.mode = EXCLUDE_U_HCOM_C, .v = v, .u = NULL, .hcom = NULL, .c = NULL};
+  sign_vole_mode_ctx_t ctx = {EXCLUDE_U_HCOM_C, v, NULL, NULL, NULL};
+  return ctx;
 }
 
 typedef struct verify_vole_mode_ctx_t {
@@ -54,17 +57,20 @@ typedef struct verify_vole_mode_ctx_t {
 ATTR_CONST ATTR_ALWAYS_INLINE inline verify_vole_mode_ctx_t vole_mode_all_verify(uint8_t* q, uint8_t* hcom) {
   assert(q != NULL);
   assert(hcom != NULL);
-  return (verify_vole_mode_ctx_t){.mode = INCLUDE_ALL, .q = q, .hcom = hcom};
+  verify_vole_mode_ctx_t ctx = {INCLUDE_ALL, q, hcom};
+  return ctx;
 }
 
 ATTR_CONST ATTR_ALWAYS_INLINE inline verify_vole_mode_ctx_t vole_mode_q(uint8_t* q) {
   assert(q != NULL);
-  return (verify_vole_mode_ctx_t){.mode = EXCLUDE_HCOM, .q = q, .hcom = NULL};
+  verify_vole_mode_ctx_t ctx = {EXCLUDE_HCOM, q, NULL};
+  return ctx;
 }
 
 ATTR_CONST ATTR_ALWAYS_INLINE inline verify_vole_mode_ctx_t vole_mode_hcom(uint8_t* hcom) {
   assert(hcom != NULL);
-  return (verify_vole_mode_ctx_t){.mode = EXCLUDE_Q, .q = NULL, .hcom = hcom};
+  verify_vole_mode_ctx_t ctx = {EXCLUDE_Q, NULL, hcom};
+  return ctx;
 }
 
 // k_b is at most 12, so chalout needs to point to an array of at most 12 bytes
