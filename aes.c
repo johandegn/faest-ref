@@ -446,7 +446,7 @@ void prg(const uint8_t* key, const uint8_t* iv, uint8_t* out, unsigned int seclv
 
 uint8_t* aes_extend_witness(const uint8_t* key, const uint8_t* in, const faest_paramset_t* params, uint8_t* w) {
   const unsigned int lambda     = params->faest_param.lambda;
-  const unsigned int l          = params->faest_param.l;
+  //const unsigned int l          = params->faest_param.l;
   const unsigned int L_ke       = params->faest_param.Lke;
   const unsigned int S_ke       = params->faest_param.Ske;
   const unsigned int num_rounds = params->faest_param.R;
