@@ -83,11 +83,15 @@ void get_sd_com(vec_com_t* vec_com, const uint8_t* iv, uint32_t lambda, unsigned
       node = r_child;
       lo   = center + 1;
     }
-    if (path_nodes != NULL)
+    if (path_nodes != NULL) {
       memcpy(path_nodes + i * lambda_bytes, node, lambda_bytes);
+    }
   }
 
-  vec_com->path.index = index;
+  if (path_nodes != NULL) {
+    vec_com->path.index = index;
+    vec_com->path.empty = false;
+  }
 
   H0(node, lambda, iv, sd, com);
   //free(children);
@@ -217,11 +221,15 @@ void get_sd_com_rec(vec_com_rec_t* vec_com_rec, const uint8_t* iv, uint32_t lamb
       node = r_child;
       lo   = center + 1;
     }
-    if (path_nodes != NULL)
+    if (path_nodes != NULL) {
       memcpy(path_nodes + j * lambda_bytes, node, lambda_bytes);
+    }
   }
 
-  vec_com_rec->path.index = index;
+  if (path_nodes != NULL) {
+    vec_com_rec->path.index = index;
+    vec_com_rec->path.empty = false;
+  }
 
   H0(node, lambda, iv, sd, com);
 }
