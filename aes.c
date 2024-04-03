@@ -335,46 +335,46 @@ void prg(const uint8_t* key, const uint8_t* iv, uint8_t* out, unsigned int seclv
 
   switch (seclvl) {
   case 256:
-    aes256ctx_publicinputs ctx;
-    aes256_ecb_keyexp_publicinputs(&ctx, key);
+    aes256ctx_publicinputs ctx256;
+    aes256_ecb_keyexp_publicinputs(&ctx256, key);
     for (; outlen >= 16; outlen -= 16, out += 16) {
-      aes256_ecb_publicinputs(out, internal_iv, 1, &ctx);
+      aes256_ecb_publicinputs(out, internal_iv, 1, &ctx256);
       aes_increment_iv(internal_iv);
     }
     if (outlen % 16) {
       uint8_t tmp[16];
-      aes256_ecb_publicinputs(tmp, internal_iv, 1, &ctx);
+      aes256_ecb_publicinputs(tmp, internal_iv, 1, &ctx256);
       memcpy(out, tmp, outlen);
     }
-    aes256_ctx_release_publicinputs(&ctx);
+    aes256_ctx_release_publicinputs(&ctx256);
     break;
   case 192:
-    aes192ctx_publicinputs ctx;
-    aes192_ecb_keyexp_publicinputs(&ctx, key);
+    aes192ctx_publicinputs ctx192;
+    aes192_ecb_keyexp_publicinputs(&ctx192, key);
     for (; outlen >= 16; outlen -= 16, out += 16) {
-      aes192_ecb_publicinputs(out, internal_iv, 1, &ctx);
+      aes192_ecb_publicinputs(out, internal_iv, 1, &ctx192);
       aes_increment_iv(internal_iv);
     }
     if (outlen % 16) {
       uint8_t tmp[16];
-      aes192_ecb_publicinputs(tmp, internal_iv, 1, &ctx);
+      aes192_ecb_publicinputs(tmp, internal_iv, 1, &ctx192);
       memcpy(out, tmp, outlen);
     }
-    aes192_ctx_release_publicinputs(&ctx);
+    aes192_ctx_release_publicinputs(&ctx192);
     break;
   default:
-    aes128ctx_publicinputs ctx;
-    aes128_ecb_keyexp_publicinputs(&ctx, key);
+    aes128ctx_publicinputs ctx128;
+    aes128_ecb_keyexp_publicinputs(&ctx128, key);
     for (; outlen >= 16; outlen -= 16, out += 16) {
-      aes128_ecb_publicinputs(out, internal_iv, 1, &ctx);
+      aes128_ecb_publicinputs(out, internal_iv, 1, &ctx128);
       aes_increment_iv(internal_iv);
     }
     if (outlen % 16) {
       uint8_t tmp[16];
-      aes128_ecb_publicinputs(tmp, internal_iv, 1, &ctx);
+      aes128_ecb_publicinputs(tmp, internal_iv, 1, &ctx128);
       memcpy(out, tmp, outlen);
     }
-    aes128_ctx_release_publicinputs(&ctx);
+    aes128_ctx_release_publicinputs(&ctx128);
     break;
   }
 
