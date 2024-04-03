@@ -19,6 +19,18 @@ static inline void xor_u8_array(const uint8_t* a, const uint8_t* b, uint8_t* out
   }
 }
 
+static inline void xor_u16_array(const uint16_t* a, const uint16_t* b, uint16_t* out, size_t len) {
+  for (size_t i = 0; i < len; i++) {
+    out[i] = a[i] ^ b[i];
+  }
+}
+
+static inline void xor_u32_array(const uint32_t* a, const uint32_t* b, uint32_t* out, size_t len) {
+  for (size_t i = 0; i < len; i++) {
+    out[i] = a[i] ^ b[i];
+  }
+}
+
 static inline void masked_xor_u8_array(const uint8_t* a, const uint8_t* b, uint8_t* out,
                                        uint8_t mask_bit, size_t len) {
   uint8_t mask = -(mask_bit & 1);
