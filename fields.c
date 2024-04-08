@@ -75,14 +75,65 @@ bf64_t bf64_rand(void) {
   return ret;
 }
 
-bf64_t bf64_mul(bf64_t lhs, bf64_t rhs) {
-  bf64_t result = 0;
-  for (unsigned int idx = 64; idx; --idx, rhs >>= 1) {
-    result ^= (-(rhs & 1)) & lhs;
-    const uint64_t mask = -((lhs >> 63) & 1);
-    lhs                 = (lhs << 1) ^ (mask & bf64_modulus);
+ATTR_CONST static inline bf64_t bf64_reduce(uint64_t C[2]) {
+  C[0] ^= C[1];
+  C[0] ^= C[1] << 1;
+  C[0] ^= C[1] << 3;
+  C[0] ^= C[1] << 4;
+  uint64_t tmp = 0;
+  tmp ^= C[1] >> 63;
+  tmp ^= C[1] >> 61;
+  tmp ^= C[1] >> 60;
+  
+  C[0] ^= tmp;
+  C[0] ^= tmp << 1;
+  C[0] ^= tmp << 3;
+  C[0] ^= tmp << 4;
+
+  return C[0];
+}
+
+ATTR_CONST static inline bf64_t bf64_shift_left_1_modulus(bf64_t value) {
+  const uint64_t mask = -((value >> 63) & 1);
+  return (value << 1) ^ (mask & bf64_modulus);
+}
+
+#define bf64_mul_w 4
+#define bf64_mul_u_amount (2 << (bf64_mul_w - 1))
+
+bf64_t bf64_mul(bf64_t a, bf64_t b) {
+  // step 1
+  bf64_t B[bf64_mul_u_amount];
+  B[0] = bf64_zero();
+  B[1] = b;
+  for (unsigned int i = 0; i < bf64_mul_w - 1; i++) {
+    B[2 << i] = bf64_shift_left_1_modulus(B[1 << i]);
+    for (unsigned int j = 1; j < (2U << i); j++) {
+      B[(2 << i) + j] = bf64_add(B[2 << i], B[j]);
+    }
   }
-  return result;
+
+  // step 2
+  uint64_t C[2] = {0};
+
+  const unsigned int W      = 64;
+  const unsigned int u_mask = bf64_mul_u_amount - 1;
+  // step 3
+  for (int k = (W / bf64_mul_w) - 1; k >= 0; k--) {
+    // step 3.1
+    unsigned int u = (a >> (bf64_mul_w * k)) & u_mask;
+
+    // Add to C{j}
+    C[0] ^= B[u];
+
+    // step 3.2
+    if (k != 0) {
+      C[1] = (C[1] << bf64_mul_w) | (C[0] >> (W - bf64_mul_w));
+      C[0] = C[0] << bf64_mul_w;
+    }
+  }
+
+  return bf64_reduce(C);
 }
 
 #define bf64_bit_to_mask(value, bit) -((((uint64_t)(value)) >> (bit)) & 1)
@@ -194,7 +245,7 @@ static inline uint64_t bf128_bit_to_uint64_mask(bf128_t value, unsigned int bit)
   return -((BF_VALUE(value, byte_idx) >> bit_idx) & 1);
 }
 
-bf128_t bf128_reduce(uint64_t C[4]) {
+ATTR_CONST static inline bf128_t bf128_reduce(uint64_t C[4]) {
   C[1] ^= C[3];
   C[1] ^= C[3] << 1;
   C[1] ^= C[3] << 2;
@@ -215,7 +266,7 @@ bf128_t bf128_reduce(uint64_t C[4]) {
   return r;
 }
 
-bf128_t bf128_shift_left_1_modulus(bf128_t value) {
+ATTR_CONST static inline bf128_t bf128_shift_left_1_modulus(bf128_t value) {
   const uint64_t mask = bf128_bit_to_uint64_mask(value, 128 - 1);
   value               = bf128_shift_left_1(value);
   BF_VALUE(value, 0) ^= (mask & bf128_modulus);
@@ -421,7 +472,7 @@ static inline uint64_t bf192_bit_to_uint64_mask(bf192_t value, unsigned int bit)
   return -((BF_VALUE(value, byte_idx) >> bit_idx) & 1);
 }
 
-bf192_t bf192_reduce(uint64_t C[6]) {
+ATTR_CONST static inline bf192_t bf192_reduce(uint64_t C[6]) {
   C[2] ^= C[5];
   C[2] ^= C[5] << 1;
   C[2] ^= C[5] << 2;
@@ -450,7 +501,7 @@ bf192_t bf192_reduce(uint64_t C[6]) {
   return r;
 }
 
-bf192_t bf192_shift_left_1_modulus(bf192_t value) {
+ATTR_CONST static inline bf192_t bf192_shift_left_1_modulus(bf192_t value) {
   const uint64_t mask = bf192_bit_to_uint64_mask(value, 192 - 1);
   value               = bf192_shift_left_1(value);
   BF_VALUE(value, 0) ^= (mask & bf192_modulus);
@@ -665,7 +716,7 @@ ATTR_CONST ATTR_ALWAYS_INLINE static inline uint64_t bf256_bit_to_uint64_mask(bf
   return -((BF_VALUE(value, byte_idx) >> bit_idx) & 1);
 }
 
-bf256_t bf256_reduce(uint64_t C[8]) {
+ATTR_CONST static inline bf256_t bf256_reduce(uint64_t C[8]) {
   C[3] ^= C[7];
   C[3] ^= C[7] << 2;
   C[3] ^= C[7] << 5;
@@ -702,7 +753,7 @@ bf256_t bf256_reduce(uint64_t C[8]) {
   return r;
 }
 
-bf256_t bf256_shift_left_1_modulus(bf256_t value) {
+ATTR_CONST static inline bf256_t bf256_shift_left_1_modulus(bf256_t value) {
   const uint64_t mask = bf256_bit_to_uint64_mask(value, 256 - 1);
   value               = bf256_shift_left_1(value);
   BF_VALUE(value, 0) ^= (mask & bf256_modulus);
