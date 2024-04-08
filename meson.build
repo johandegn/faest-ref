@@ -16,7 +16,7 @@ conf_data = configuration_data()
 
 # compile flags and defines
 flags = []
-c_flags = ['-O2']
+c_flags = []
 cpp_flags = []
 defines = []
 
@@ -25,7 +25,6 @@ if cc.get_id() != 'msvc'
     '-Werror=implicit-function-declaration',
     '-Werror=vla',
     '-Werror=incompatible-pointer-types',
-    #'-O2',
   ]
   flags += '-Wshadow'
   defines += '-D_GNU_SOURCE'
