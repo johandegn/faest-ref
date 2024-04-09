@@ -161,7 +161,7 @@ void get_sd_com_rec(vec_com_rec_t* vec_com_rec, const uint8_t* iv, uint32_t lamb
                     unsigned int index, uint8_t* sd, uint8_t* com) {
   const unsigned int lambda_bytes = lambda / 8;
   const unsigned int depth        = vec_com_rec->depth;
-  uint8_t* children               = alloca(lambda_bytes * 2);
+  uint8_t* children               = malloc(lambda_bytes * 2);
   uint8_t* l_child                = children;
   uint8_t* r_child                = l_child + lambda_bytes;
 
@@ -248,4 +248,5 @@ void get_sd_com_rec(vec_com_rec_t* vec_com_rec, const uint8_t* iv, uint32_t lamb
   }
 
   H0(node, lambda, iv, sd, com);
+  free(children);
 }
