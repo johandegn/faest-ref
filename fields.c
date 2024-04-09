@@ -75,7 +75,7 @@ bf64_t bf64_rand(void) {
   return ret;
 }
 
-ATTR_CONST static inline bf64_t bf64_reduce(uint64_t C[2]) {
+static inline bf64_t bf64_reduce(uint64_t C[2]) {
   C[0] ^= C[1];
   C[0] ^= C[1] << 1;
   C[0] ^= C[1] << 3;
@@ -84,7 +84,7 @@ ATTR_CONST static inline bf64_t bf64_reduce(uint64_t C[2]) {
   tmp ^= C[1] >> 63;
   tmp ^= C[1] >> 61;
   tmp ^= C[1] >> 60;
-  
+
   C[0] ^= tmp;
   C[0] ^= tmp << 1;
   C[0] ^= tmp << 3;
@@ -245,7 +245,7 @@ static inline uint64_t bf128_bit_to_uint64_mask(bf128_t value, unsigned int bit)
   return -((BF_VALUE(value, byte_idx) >> bit_idx) & 1);
 }
 
-ATTR_CONST static inline bf128_t bf128_reduce(uint64_t C[4]) {
+static inline bf128_t bf128_reduce(uint64_t C[4]) {
   C[1] ^= C[3];
   C[1] ^= C[3] << 1;
   C[1] ^= C[3] << 2;
@@ -472,7 +472,7 @@ static inline uint64_t bf192_bit_to_uint64_mask(bf192_t value, unsigned int bit)
   return -((BF_VALUE(value, byte_idx) >> bit_idx) & 1);
 }
 
-ATTR_CONST static inline bf192_t bf192_reduce(uint64_t C[6]) {
+static inline bf192_t bf192_reduce(uint64_t C[6]) {
   C[2] ^= C[5];
   C[2] ^= C[5] << 1;
   C[2] ^= C[5] << 2;
@@ -716,7 +716,7 @@ ATTR_CONST ATTR_ALWAYS_INLINE static inline uint64_t bf256_bit_to_uint64_mask(bf
   return -((BF_VALUE(value, byte_idx) >> bit_idx) & 1);
 }
 
-ATTR_CONST static inline bf256_t bf256_reduce(uint64_t C[8]) {
+static inline bf256_t bf256_reduce(uint64_t C[8]) {
   C[3] ^= C[7];
   C[3] ^= C[7] << 2;
   C[3] ^= C[7] << 5;
