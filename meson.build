@@ -472,7 +472,9 @@ else
   defines += '-DWITH_KECCAK_X4'
   faest_sources += files(
     'sha3/KeccakHash.c',
+	'sha3/KeccakMPCHash.c',
     'sha3/KeccakSponge.c',
+	'sha3/KeccakMPCSponge.c',
     'sha3/KeccakSpongetimes4.c',
     'sha3/KeccakHashtimes4.c',
   )
@@ -486,6 +488,7 @@ else
     faest_sources += files(
       'sha3/opt64/KeccakP-1600-opt64.c',
       'sha3/opt64/KeccakP-1600-times4-on1.c',
+      'sha3/KeccakP-1600-mpc.c',
     )
   elif sha3 == 'plain32'
     faest_sources += files(
