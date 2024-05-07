@@ -195,8 +195,8 @@ static inline void hash_clear_x4(hash_context_x4* ctx) {
 #else
 #if !defined(SUPERCOP)
 /* use SHAKE implementation in sha3/ */
-#include "sha3/KeccakHash.h"
-#include "sha3/KeccakMPCHash.h"
+#include "KeccakHash.h"
+#include "KeccakMPCHash.h"
 #else
 /* use SUPERCOP implementation */
 #include <libkeccak.a.headers/KeccakHash.h>
@@ -211,9 +211,9 @@ static inline void hash_clear_x4(hash_context_x4* ctx) {
 typedef KeccakMPC_HashInstance hash_context ATTR_ALIGNED(32);
 typedef KeccakMPC_HashInstance masked_hash_context ATTR_ALIGNED(32);
 #else                    /* Otherwise, we only mask those calls that use masked_hash_context */
-typedef Keccak_HashInstance hash_context ATTR_ALIGNED(32);
+typedef Keccak_HashInstance hash_context;
 #ifdef KECCAK_MASK_NONE
-typedef Keccak_HashInstance masked_hash_context ATTR_ALIGNED(32);
+typedef Keccak_HashInstance masked_hash_context;
 #else
 typedef KeccakMPC_HashInstance masked_hash_context ATTR_ALIGNED(32);
 #endif

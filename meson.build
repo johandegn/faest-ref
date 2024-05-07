@@ -465,6 +465,7 @@ if sha3 == 'auto'
   endif
 endif
 include_directories += [include_directories('sha3'), include_directories('sha3/' + sha3)]
+#include_directories += [include_directories('sha3/masked'),] # TODO - fix this ugly hack
 
 if sha3 == 's390-cpacf'
   defines += '-DWITH_SHAKE_S390_CPACF'
@@ -486,9 +487,8 @@ else
     )
   elif sha3 == 'opt64'
     faest_sources += files(
-      'sha3/opt64/KeccakP-1600-opt64.c',
       'sha3/opt64/KeccakP-1600-times4-on1.c',
-      'sha3/KeccakP-1600-mpc.c',
+      'sha3/masked/KeccakP-1600-mpc.c', # ugly hack
     )
   elif sha3 == 'plain32'
     faest_sources += files(

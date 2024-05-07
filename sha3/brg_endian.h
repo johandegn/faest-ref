@@ -1,7 +1,7 @@
 #ifndef _BRG_ENDIAN_H
 #define _BRG_ENDIAN_H
 
-#include "../endian_compat.h"
+#include "endian_compat.h"
 
 #if defined(FAEST_IS_LITTLE_ENDIAN)
 #define IS_LITTLE_ENDIAN 1

@@ -51,15 +51,39 @@ def generate(
         shutil.copy(source, target_sha3)
     for source in sha3_sources.glob("*.inc"):
         shutil.copy(source, target_sha3)
-    sha3_sources = sha3_sources / "opt64"
-    for source in sha3_sources.glob("*.c"):
+    for source in sha3_sources.glob("*.S"):
         shutil.copy(source, target_sha3)
-    for header in sha3_sources.glob("*.h"):
+
+    sha3_opt64_sources = sha3_sources / "opt64"
+    shutil.copy(sha3_opt64_sources / "KeccakP-1600-times4-on1.c", target_sha3)
+    shutil.copy(sha3_opt64_sources / "KeccakP-1600-times4-SnP.h", target_sha3)
+    shutil.copy(sha3_opt64_sources / "PlSnP-Fallback.inc", target_sha3)
+
+    '''
+    for source in sha3_opt64_sources.glob("*.c"):
+        shutil.copy(source, target_sha3)
+    for header in sha3_opt64_sources.glob("*.h"):
         shutil.copy(header, target_sha3)
-    for source in sha3_sources.glob("*.macros"):
+    for source in sha3_opt64_sources.glob("*.macros"):
         shutil.copy(source, target_sha3)
-    for source in sha3_sources.glob("*.inc"):
+    for source in sha3_opt64_sources.glob("*.inc"):
         shutil.copy(source, target_sha3)
+    '''
+
+    sha3_masked_sources = sha3_sources / "masked"
+    for source in sha3_masked_sources.glob("*.c"):
+        shutil.copy(source, target_sha3)
+    for source in sha3_masked_sources.glob("*.i"):
+        shutil.copy(source, target_sha3)
+    for source in sha3_masked_sources.glob("*.S"):
+        shutil.copy(source, target_sha3)
+    for header in sha3_masked_sources.glob("*.h"):
+        shutil.copy(header, target_sha3)
+    for source in sha3_masked_sources.glob("*.macros"):
+        shutil.copy(source, target_sha3)
+    for source in sha3_masked_sources.glob("*.inc"):
+        shutil.copy(source, target_sha3)
+
 
     # copy tests
     for test_source in ("api_test.c",):
