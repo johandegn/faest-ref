@@ -634,13 +634,20 @@ static void sub_bytes_masked(aes_block_t state_share[2], unsigned int block_word
 uint8_t* aes_extend_witness_masked(const uint8_t* key, const uint8_t* in,
                                    const faest_paramset_t* params, uint8_t* w) {
   const unsigned int lambda = params->faest_param.lambda;
-  // const unsigned int l          = params->faest_param.l;
+  const unsigned int l          = params->faest_param.l;
   const unsigned int L_ke       = params->faest_param.Lke;
   const unsigned int S_ke       = params->faest_param.Ske;
   const unsigned int num_rounds = params->faest_param.R;
 
   // uint8_t* w           = malloc((l + 7) / 8);
   uint8_t* const w_out = w;
+
+  uint8_t* w_share[2] = {0};
+  w_share[0]          = alloca((l+7)/8);
+  w_share[1]          = alloca((l+7)/8);
+  memset(w_share[0], 0, (l+7)/8);
+  memset(w_share[1], 0, (l+7)/8);
+
 
   unsigned int block_words = AES_BLOCK_WORDS;
   unsigned int beta        = 1;
@@ -692,22 +699,37 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key, const uint8_t* in,
     break;
   }
 
+  // Masking the round keys
+  aes_round_keys_t round_keys_share[2];
+  for(int i = 0; i < AES_MAX_ROUNDS + 1; i++){
+    for(int j = 0; j < 8; j++){
+      for(int k = 0; k < 4; k++){
+        rand_mask(&round_keys_share[0].round_keys[i][j][k], 1);
+        round_keys_share[1].round_keys[i][j][k] = round_keys.round_keys[i][j][k] ^ round_keys_share[0].round_keys[i][j][k];
+      }
+    }
+  }
+
+
   // Step 4
   if (L_ke > 0) {
     // Key schedule constraints only needed for normal AES, not EM variant.
     for (unsigned int i = 0; i != params->faest_param.Nwd; ++i) {
-      memcpy(w, round_keys.round_keys[i / 4][i % 4], sizeof(aes_word_t));
+      memcpy(w_share[0] + (w - w_out), round_keys_share[0].round_keys[i / 4][i % 4], sizeof(aes_word_t));
+      memcpy(w_share[1] + (w - w_out), round_keys_share[1].round_keys[i / 4][i % 4], sizeof(aes_word_t));
       w += sizeof(aes_word_t);
     }
 
     for (unsigned int j = 0, ik = params->faest_param.Nwd; j < S_ke / 4; ++j) {
-      memcpy(w, round_keys.round_keys[ik / 4][ik % 4], sizeof(aes_word_t));
+      memcpy(w_share[0] + (w - w_out), round_keys_share[0].round_keys[ik / 4][ik % 4], sizeof(aes_word_t));
+      memcpy(w_share[1] + (w - w_out), round_keys_share[1].round_keys[ik / 4][ik % 4], sizeof(aes_word_t));
       w += sizeof(aes_word_t);
       ik += lambda == 192 ? 6 : 4;
     }
   } else {
     // saving the OWF key to the extended witness
-    memcpy(w, in, lambda / 8);
+    memcpy(w_share[0] + (w - w_out), in, lambda / 8);
+    memset(w_share[1] + (w - w_out), 0, lambda / 8);
     w += lambda / 8;
   }
 
@@ -717,37 +739,56 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key, const uint8_t* in,
     aes_block_t state;
     load_state(state, in, block_words);
 
+    // Masking the input state for encryption
+    // The state we mask are taken from the pk, hence it is public, the all states after are secret.
+    aes_block_t state_share[2] = {0};
+    for (unsigned int c = 0; c < block_words; c++) {
+      for (unsigned int r = 0; r < AES_NR; r++) {
+        rand_mask(&state_share[0][c][r], 1);
+        state_share[1][c][r] = state[c][r] ^ state_share[0][c][r];
+      }
+    }
     // Step 13
-    add_round_key(0, state, &round_keys, block_words);
+    add_round_key(0, state_share[0], &round_keys_share[0], block_words);
+    add_round_key(0, state_share[1], &round_keys_share[1], block_words);
 
     for (unsigned int round = 1; round < num_rounds; ++round) {
       // Step 15
-      aes_block_t state_share[2] = {0};
-      for (unsigned int c = 0; c < block_words; c++) {
-        for (unsigned int r = 0; r < AES_NR; r++) {
-          rand_mask(&state_share[0][c][r], 1);
-          state_share[1][c][r] = state[c][r] ^ state_share[0][c][r];
-        }
-      }
 
       sub_bytes_masked(state_share, block_words);
+
+      // Step 16
+      shift_row(state_share[0], block_words);
+      shift_row(state_share[1], block_words);
+
+      // Step 17
       for (unsigned int c = 0; c < block_words; c++) {
         for (unsigned int r = 0; r < AES_NR; r++) {
           state[c][r] = state_share[0][c][r] ^ state_share[1][c][r];
         }
       }
-
-      // Step 16
-      shift_row(state, block_words);
-      // Step 17
+      
+      store_state(w_share[0] +(w-w_out), state_share[0], block_words);
+      store_state(w_share[1] +(w-w_out), state_share[1], block_words);
+      w += sizeof(aes_word_t) * block_words;
+      /*
       store_state(w, state, block_words);
       w += sizeof(aes_word_t) * block_words;
+      */
       // Step 18
-      mix_column(state, block_words);
+
+      mix_column(state_share[0], block_words);
+      mix_column(state_share[1], block_words);
       // Step 19
-      add_round_key(round, state, &round_keys, block_words);
+      add_round_key(round, state_share[0], &round_keys_share[0], block_words);
+      add_round_key(round, state_share[1], &round_keys_share[1], block_words);
     }
     // last round is not commited to, so not computed
+  }
+
+  // reconstruct w_share in to w
+  for(unsigned int i = 0; i < (l+7)/8; i++){
+    w_out[i] = w_share[0][i] ^ w_share[1][i];
   }
 
   return w_out;
