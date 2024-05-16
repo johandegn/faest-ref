@@ -11,6 +11,7 @@
 #include "fields.h"
 #include "compat.h"
 #include "utils.h"
+#include "randomness.h"
 
 #if defined(PQCLEAN)
 #include "aes-publicinputs.h"
@@ -378,7 +379,6 @@ void prg(const uint8_t* key, const uint8_t* iv, uint8_t* out, unsigned int seclv
     break;
   }
 
-  
 #else
   uint8_t internal_iv[16];
   memcpy(internal_iv, iv, sizeof(internal_iv));
@@ -444,14 +444,15 @@ void prg(const uint8_t* key, const uint8_t* iv, uint8_t* out, unsigned int seclv
 #endif
 }
 
-uint8_t* aes_extend_witness(const uint8_t* key, const uint8_t* in, const faest_paramset_t* params, uint8_t* w) {
-  const unsigned int lambda     = params->faest_param.lambda;
-  //const unsigned int l          = params->faest_param.l;
+uint8_t* aes_extend_witness(const uint8_t* key, const uint8_t* in, const faest_paramset_t* params,
+                            uint8_t* w) {
+  const unsigned int lambda = params->faest_param.lambda;
+  // const unsigned int l          = params->faest_param.l;
   const unsigned int L_ke       = params->faest_param.Lke;
   const unsigned int S_ke       = params->faest_param.Ske;
   const unsigned int num_rounds = params->faest_param.R;
 
-  //uint8_t* w           = malloc((l + 7) / 8);
+  // uint8_t* w           = malloc((l + 7) / 8);
   uint8_t* const w_out = w;
 
   unsigned int block_words = AES_BLOCK_WORDS;
@@ -535,6 +536,207 @@ uint8_t* aes_extend_witness(const uint8_t* key, const uint8_t* in, const faest_p
     for (unsigned int round = 1; round < num_rounds; ++round) {
       // Step 15
       sub_bytes(state, block_words);
+      // Step 16
+      shift_row(state, block_words);
+      // Step 17
+      store_state(w, state, block_words);
+      w += sizeof(aes_word_t) * block_words;
+      // Step 18
+      mix_column(state, block_words);
+      // Step 19
+      add_round_key(round, state, &round_keys, block_words);
+    }
+    // last round is not commited to, so not computed
+  }
+
+  return w_out;
+}
+
+// #######################
+//  Masked implementation
+// #######################
+
+void bf8_square_masked(bf8_t in_share[2], bf8_t out_share[2]) {
+  out_share[0] = bf8_add(bf8_mul(in_share[0], in_share[0]), bf8_mul(in_share[0], in_share[1]));
+  out_share[1] = bf8_add(bf8_mul(in_share[1], in_share[0]), bf8_mul(in_share[1], in_share[1]));
+}
+
+void bf8_mul_masked(bf8_t a[2], bf8_t b[2], bf8_t out_share[2]) {
+  out_share[0] = bf8_add(bf8_mul(a[0], b[0]), bf8_mul(a[0], b[1]));
+  out_share[1] = bf8_add(bf8_mul(a[1], b[0]), bf8_mul(a[1], b[1]));
+}
+
+void bf8_inv_masked(bf8_t in_share[2], bf8_t out_share[2]) {
+  bf8_t t_2_share[2]   = {0, 0};
+  bf8_t t_3_share[2]   = {0, 0};
+  bf8_t t_5_share[2]   = {0, 0};
+  bf8_t t_7_share[2]   = {0, 0};
+  bf8_t t_14_share[2]  = {0, 0};
+  bf8_t t_28_share[2]  = {0, 0};
+  bf8_t t_56_share[2]  = {0, 0};
+  bf8_t t_63_share[2]  = {0, 0};
+  bf8_t t_126_share[2] = {0, 0};
+  bf8_t t_252_share[2] = {0, 0};
+  bf8_square_masked(in_share, t_2_share);
+  bf8_mul_masked(in_share, t_2_share, t_3_share);
+  bf8_mul_masked(t_3_share, t_2_share, t_5_share);
+  bf8_mul_masked(t_5_share, t_2_share, t_7_share);
+  bf8_square_masked(t_7_share, t_14_share);
+  bf8_square_masked(t_14_share, t_28_share);
+  bf8_square_masked(t_28_share, t_56_share);
+  bf8_mul_masked(t_56_share, t_7_share, t_63_share);
+  bf8_square_masked(t_63_share, t_126_share);
+  bf8_square_masked(t_126_share, t_252_share);
+  bf8_mul_masked(t_252_share, t_2_share, out_share);
+}
+
+static void compute_sbox_masked(bf8_t in[2], bf8_t out[2]) {
+  bf8_t out_share[2] = {0};
+  bf8_inv_masked(in, out_share);
+
+  for (int i = 0; i < 2; i++) {
+    bf8_t t  = out_share[i];
+    bf8_t t0 = set_bit(parity8(t & (1 | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7))), 0);
+    // get_bit(t, 0) ^ get_bit(t, 1) ^ get_bit(t, 5) ^ get_bit(t, 6) ^ get_bit(t,
+    t0 ^= set_bit(parity8(t & (1 | (1 << 1) | (1 << 5) | (1 << 6) | (1 << 7))), 1);
+    // get_bit(t, 0) ^ get_bit(t, 1) ^ get_bit(t, 2) ^ get_bit(t, 6) ^ get_bit(t, 7)
+    t0 ^= set_bit(parity8(t & (1 | (1 << 1) | (1 << 2) | (1 << 6) | (1 << 7))), 2);
+    // get_bit(t, 0) ^ get_bit(t, 1) ^ get_bit(t, 2) ^ get_bit(t, 3) ^ get_bit(t, 7)
+    t0 ^= set_bit(parity8(t & (1 | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 7))), 3);
+    // get_bit(t, 0) ^ get_bit(t, 1) ^ get_bit(t, 2) ^ get_bit(t, 3) ^ get_bit(t, 4)
+    t0 ^= set_bit(parity8(t & (1 | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4))), 4);
+    // get_bit(t, 1) ^ get_bit(t, 2) ^ get_bit(t, 3) ^ get_bit(t, 4) ^ get_bit(t, 5)
+    t0 ^= set_bit(parity8(t & ((1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5))), 5);
+    // get_bit(t, 2) ^ get_bit(t, 3) ^ get_bit(t, 4) ^ get_bit(t, 5) ^ get_bit(t, 6)
+    t0 ^= set_bit(parity8(t & ((1 << 2) | (1 << 3) | (1 << 4) | (1 << 5) | (1 << 6))), 6);
+    // get_bit(t, 3) ^ get_bit(t, 4) ^ get_bit(t, 5) ^ get_bit(t, 6) ^ get_bit(t, 7)
+    t0 ^= set_bit(parity8(t & ((1 << 3) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7))), 7);
+    out_share[i] = t0;
+  }
+  out[0] = out_share[0];
+  out[1] = out_share[1] ^ (1 | (1 << 1) | (1 << 5) | (1 << 6));
+}
+
+static void sub_bytes_masked(aes_block_t state_share[2], unsigned int block_words) {
+  for (unsigned int c = 0; c < block_words; c++) {
+    for (unsigned int r = 0; r < AES_NR; r++) {
+      bf8_t in_share[2]  = {state_share[0][c][r], state_share[1][c][r]};
+      bf8_t out_share[2] = {0, 0};
+      compute_sbox_masked(in_share, out_share);
+      state_share[0][c][r] = out_share[0];
+      state_share[1][c][r] = out_share[1];
+
+      // state[c][r] = compute_sbox_masked(state[c][r]);
+    }
+  }
+}
+
+uint8_t* aes_extend_witness_masked(const uint8_t* key, const uint8_t* in,
+                                   const faest_paramset_t* params, uint8_t* w) {
+  const unsigned int lambda = params->faest_param.lambda;
+  // const unsigned int l          = params->faest_param.l;
+  const unsigned int L_ke       = params->faest_param.Lke;
+  const unsigned int S_ke       = params->faest_param.Ske;
+  const unsigned int num_rounds = params->faest_param.R;
+
+  // uint8_t* w           = malloc((l + 7) / 8);
+  uint8_t* const w_out = w;
+
+  unsigned int block_words = AES_BLOCK_WORDS;
+  unsigned int beta        = 1;
+  switch (params->faest_paramid) {
+  case FAEST_192F:
+  case FAEST_192S:
+  case FAEST_256F:
+  case FAEST_256S:
+    beta = 2;
+    break;
+  case FAEST_EM_192F:
+  case FAEST_EM_192S:
+    block_words = RIJNDAEL_BLOCK_WORDS_192;
+    break;
+  case FAEST_EM_256F:
+  case FAEST_EM_256S:
+    block_words = RIJNDAEL_BLOCK_WORDS_256;
+    break;
+  default:
+    break;
+  }
+
+  if (!L_ke) {
+    // switch input and key for EM
+    const uint8_t* tmp = key;
+    key                = in;
+    in                 = tmp;
+  }
+
+  // Step 3
+  aes_round_keys_t round_keys;
+  switch (lambda) {
+  case 256:
+    if (block_words == RIJNDAEL_BLOCK_WORDS_256) {
+      rijndael256_init_round_keys(&round_keys, key);
+    } else {
+      aes256_init_round_keys(&round_keys, key);
+    }
+    break;
+  case 192:
+    if (block_words == RIJNDAEL_BLOCK_WORDS_192) {
+      rijndael192_init_round_keys(&round_keys, key);
+    } else {
+      aes192_init_round_keys(&round_keys, key);
+    }
+    break;
+  default:
+    aes128_init_round_keys(&round_keys, key);
+    break;
+  }
+
+  // Step 4
+  if (L_ke > 0) {
+    // Key schedule constraints only needed for normal AES, not EM variant.
+    for (unsigned int i = 0; i != params->faest_param.Nwd; ++i) {
+      memcpy(w, round_keys.round_keys[i / 4][i % 4], sizeof(aes_word_t));
+      w += sizeof(aes_word_t);
+    }
+
+    for (unsigned int j = 0, ik = params->faest_param.Nwd; j < S_ke / 4; ++j) {
+      memcpy(w, round_keys.round_keys[ik / 4][ik % 4], sizeof(aes_word_t));
+      w += sizeof(aes_word_t);
+      ik += lambda == 192 ? 6 : 4;
+    }
+  } else {
+    // saving the OWF key to the extended witness
+    memcpy(w, in, lambda / 8);
+    w += lambda / 8;
+  }
+
+  // Step 10
+  for (unsigned b = 0; b < beta; ++b, in += sizeof(aes_word_t) * block_words) {
+    // Step 12
+    aes_block_t state;
+    load_state(state, in, block_words);
+
+    // Step 13
+    add_round_key(0, state, &round_keys, block_words);
+
+    for (unsigned int round = 1; round < num_rounds; ++round) {
+      // Step 15
+      aes_block_t state_share[2] = {0};
+      for (unsigned int c = 0; c < block_words; c++) {
+        for (unsigned int r = 0; r < AES_NR; r++) {
+          rand_mask(&state_share[0][c][r], 1);
+          state_share[1][c][r] = state[c][r] ^ state_share[0][c][r];
+        }
+      }
+
+      sub_bytes_masked(state_share, block_words);
+      for (unsigned int c = 0; c < block_words; c++) {
+        for (unsigned int r = 0; r < AES_NR; r++) {
+          state[c][r] = state_share[0][c][r] ^ state_share[1][c][r];
+        }
+      }
+
       // Step 16
       shift_row(state, block_words);
       // Step 17
