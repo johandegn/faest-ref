@@ -341,14 +341,26 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
     }
     H1_final(&h1_ctx_1, h_v, lambdaBytes * 2);
   }
-  
-  uint8_t* w               = alloca((l + 7) / 8);
+
+#define WITNESS_MASKING
+#ifdef WITNESS_MASKING
+  // secret sharing the key and then computing the extended witness
+  uint8_t* w_share                       = alloca(2 * (l + 7) / 8);
   uint8_t key_share[2][MAX_LAMBDA_BYTES] = {0};
   for (int i = 0; i < MAX_LAMBDA_BYTES; i++) {
     rand_mask(&key_share[0][i], 1);
     key_share[1][i] = owf_key[i] ^ key_share[0][i];
   }
-  w = aes_extend_witness_masked(&key_share[0][0], owf_input, params, w);
+  uint8_t* w = alloca((l + 7) / 8);
+  w_share    = aes_extend_witness_masked(&key_share[0][0], owf_input, params, w_share);
+  for (unsigned int i = 0; i < (l + 7) / 8; i++) {
+    w[i] = w_share[i] ^ w_share[i + (l + 7) / 8];
+  }
+#else
+  uint8_t* w = alloca((l + 7) / 8);
+  w          = aes_extend_witness(owf_key, owf_input, params, w);
+#endif
+
   xor_u8_array(w, get_vole_u(&vbb), signature_d(sig, params), ell_bytes);
 
   uint8_t chall_2[3 * MAX_LAMBDA_BYTES + 8];

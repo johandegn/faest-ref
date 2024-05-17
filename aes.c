@@ -700,9 +700,6 @@ void expand_128key_masked(aes_round_keys_t* round_keys_share, const uint8_t* key
 }
 
 void aes128_init_round_keys_masked(aes_round_keys_t* round_key_share, const uint8_t* key) {
-  // Sharing of key
-  /**/
-
   expand_128key_masked(round_key_share, key, KEY_WORDS_128, AES_BLOCK_WORDS, ROUNDS_128);
 }
 
@@ -744,6 +741,8 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key_share, const uint8_t* in,
     break;
   }
 
+  // Reconstruct key if not running 128 variant
+  // All other variants are not masked yet!  
   uint8_t* key;
   if (!L_ke || lambda != 128) {
     key = alloca(MAX_LAMBDA_BYTES);
@@ -812,7 +811,7 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key_share, const uint8_t* in,
     break;
   }
 
-  // Masking the round keys
+  // Saving the expanded key parts to the extended witness
 
   // Step 4
   if (L_ke > 0) {
@@ -887,9 +886,10 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key_share, const uint8_t* in,
     // last round is not commited to, so not computed
   }
 
-  // reconstruct w_share in to w
+  // Setting up output to return
   for (unsigned int i = 0; i < (l + 7) / 8; i++) {
-    w_out[i] = w_share[0][i] ^ w_share[1][i];
+    w_out[i]               = w_share[0][i];
+    w_out[i + (l + 7) / 8] = w_share[1][i];
   }
 
   return w_out;
