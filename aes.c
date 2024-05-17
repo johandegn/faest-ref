@@ -625,15 +625,90 @@ static void sub_bytes_masked(aes_block_t state_share[2], unsigned int block_word
       compute_sbox_masked(in_share, out_share);
       state_share[0][c][r] = out_share[0];
       state_share[1][c][r] = out_share[1];
-
-      // state[c][r] = compute_sbox_masked(state[c][r]);
     }
   }
 }
 
-uint8_t* aes_extend_witness_masked(const uint8_t* key, const uint8_t* in,
+static void sub_words_masked(bf8_t words[2][AES_NR]) {
+  for (int i = 0; i < 4; i++) {
+    bf8_t in_share[2]  = {words[0][i], words[1][i]};
+    bf8_t out_share[2] = {0, 0};
+    compute_sbox_masked(in_share, out_share);
+    words[0][i] = out_share[0];
+    words[1][i] = out_share[1];
+  }
+}
+
+void expand_128key_masked(aes_round_keys_t* round_keys_share, const uint8_t* key_share,
+                          unsigned int key_words, unsigned int block_words,
+                          unsigned int num_rounds) {
+  for (unsigned int k = 0; k < key_words; k++) {
+    round_keys_share[0].round_keys[k / block_words][k % block_words][0] =
+        bf8_load(&key_share[4 * k]);
+    round_keys_share[0].round_keys[k / block_words][k % block_words][1] =
+        bf8_load(&key_share[(4 * k) + 1]);
+    round_keys_share[0].round_keys[k / block_words][k % block_words][2] =
+        bf8_load(&key_share[(4 * k) + 2]);
+    round_keys_share[0].round_keys[k / block_words][k % block_words][3] =
+        bf8_load(&key_share[(4 * k) + 3]);
+    round_keys_share[1].round_keys[k / block_words][k % block_words][0] =
+        bf8_load(&key_share[4 * k + MAX_LAMBDA_BYTES]);
+    round_keys_share[1].round_keys[k / block_words][k % block_words][1] =
+        bf8_load(&key_share[(4 * k) + 1 + MAX_LAMBDA_BYTES]);
+    round_keys_share[1].round_keys[k / block_words][k % block_words][2] =
+        bf8_load(&key_share[(4 * k) + 2 + MAX_LAMBDA_BYTES]);
+    round_keys_share[1].round_keys[k / block_words][k % block_words][3] =
+        bf8_load(&key_share[(4 * k) + 3 + MAX_LAMBDA_BYTES]);
+  }
+
+  for (unsigned int k = key_words; k < block_words * (num_rounds + 1); ++k) {
+    bf8_t tmp_share[2][AES_NR];
+    memcpy(tmp_share[0],
+           round_keys_share[0].round_keys[(k - 1) / block_words][(k - 1) % block_words],
+           sizeof(tmp_share[0]));
+    memcpy(tmp_share[1],
+           round_keys_share[1].round_keys[(k - 1) / block_words][(k - 1) % block_words],
+           sizeof(tmp_share[1]));
+    if (k % key_words == 0) {
+      rot_word(tmp_share[0]);
+      rot_word(tmp_share[1]);
+      sub_words_masked(tmp_share);
+      tmp_share[0][0] ^= round_constants[(k / key_words) - 1];
+    }
+
+    if (key_words > 6 && (k % key_words) == 4) {
+      sub_words_masked(tmp_share);
+    }
+    unsigned int m = k - key_words;
+    round_keys_share[0].round_keys[k / block_words][k % block_words][0] =
+        round_keys_share[0].round_keys[m / block_words][m % block_words][0] ^ tmp_share[0][0];
+    round_keys_share[0].round_keys[k / block_words][k % block_words][1] =
+        round_keys_share[0].round_keys[m / block_words][m % block_words][1] ^ tmp_share[0][1];
+    round_keys_share[0].round_keys[k / block_words][k % block_words][2] =
+        round_keys_share[0].round_keys[m / block_words][m % block_words][2] ^ tmp_share[0][2];
+    round_keys_share[0].round_keys[k / block_words][k % block_words][3] =
+        round_keys_share[0].round_keys[m / block_words][m % block_words][3] ^ tmp_share[0][3];
+    round_keys_share[1].round_keys[k / block_words][k % block_words][0] =
+        round_keys_share[1].round_keys[m / block_words][m % block_words][0] ^ tmp_share[1][0];
+    round_keys_share[1].round_keys[k / block_words][k % block_words][1] =
+        round_keys_share[1].round_keys[m / block_words][m % block_words][1] ^ tmp_share[1][1];
+    round_keys_share[1].round_keys[k / block_words][k % block_words][2] =
+        round_keys_share[1].round_keys[m / block_words][m % block_words][2] ^ tmp_share[1][2];
+    round_keys_share[1].round_keys[k / block_words][k % block_words][3] =
+        round_keys_share[1].round_keys[m / block_words][m % block_words][3] ^ tmp_share[1][3];
+  }
+}
+
+void aes128_init_round_keys_masked(aes_round_keys_t* round_key_share, const uint8_t* key) {
+  // Sharing of key
+  /**/
+
+  expand_128key_masked(round_key_share, key, KEY_WORDS_128, AES_BLOCK_WORDS, ROUNDS_128);
+}
+
+uint8_t* aes_extend_witness_masked(const uint8_t* key_share, const uint8_t* in,
                                    const faest_paramset_t* params, uint8_t* w) {
-  const unsigned int lambda = params->faest_param.lambda;
+  const unsigned int lambda     = params->faest_param.lambda;
   const unsigned int l          = params->faest_param.l;
   const unsigned int L_ke       = params->faest_param.Lke;
   const unsigned int S_ke       = params->faest_param.Ske;
@@ -643,11 +718,10 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key, const uint8_t* in,
   uint8_t* const w_out = w;
 
   uint8_t* w_share[2] = {0};
-  w_share[0]          = alloca((l+7)/8);
-  w_share[1]          = alloca((l+7)/8);
-  memset(w_share[0], 0, (l+7)/8);
-  memset(w_share[1], 0, (l+7)/8);
-
+  w_share[0]          = alloca((l + 7) / 8);
+  w_share[1]          = alloca((l + 7) / 8);
+  memset(w_share[0], 0, (l + 7) / 8);
+  memset(w_share[1], 0, (l + 7) / 8);
 
   unsigned int block_words = AES_BLOCK_WORDS;
   unsigned int beta        = 1;
@@ -670,12 +744,20 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key, const uint8_t* in,
     break;
   }
 
+  uint8_t* key;
+  if (!L_ke || lambda != 128) {
+    key = alloca(MAX_LAMBDA_BYTES);
+    for (int i = 0; i < MAX_LAMBDA_BYTES; i++) {
+      key[i] = key_share[i] ^ key_share[i + MAX_LAMBDA_BYTES];
+    }
+  }
   if (!L_ke) {
     // switch input and key for EM
     const uint8_t* tmp = key;
     key                = in;
     in                 = tmp;
   }
+  aes_round_keys_t round_keys_share[2];
 
   // Step 3
   aes_round_keys_t round_keys;
@@ -686,6 +768,15 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key, const uint8_t* in,
     } else {
       aes256_init_round_keys(&round_keys, key);
     }
+    for (int i = 0; i < AES_MAX_ROUNDS + 1; i++) {
+      for (int j = 0; j < 8; j++) {
+        for (int k = 0; k < 4; k++) {
+          rand_mask(&round_keys_share[0].round_keys[i][j][k], 1);
+          round_keys_share[1].round_keys[i][j][k] =
+              round_keys.round_keys[i][j][k] ^ round_keys_share[0].round_keys[i][j][k];
+        }
+      }
+    }
     break;
   case 192:
     if (block_words == RIJNDAEL_BLOCK_WORDS_192) {
@@ -693,36 +784,52 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key, const uint8_t* in,
     } else {
       aes192_init_round_keys(&round_keys, key);
     }
+    for (int i = 0; i < AES_MAX_ROUNDS + 1; i++) {
+      for (int j = 0; j < 8; j++) {
+        for (int k = 0; k < 4; k++) {
+          rand_mask(&round_keys_share[0].round_keys[i][j][k], 1);
+          round_keys_share[1].round_keys[i][j][k] =
+              round_keys.round_keys[i][j][k] ^ round_keys_share[0].round_keys[i][j][k];
+        }
+      }
+    }
     break;
   default:
-    aes128_init_round_keys(&round_keys, key);
+    if (!L_ke) {
+      aes128_init_round_keys(&round_keys, key);
+      for (int i = 0; i < AES_MAX_ROUNDS + 1; i++) {
+        for (int j = 0; j < 8; j++) {
+          for (int k = 0; k < 4; k++) {
+            rand_mask(&round_keys_share[0].round_keys[i][j][k], 1);
+            round_keys_share[1].round_keys[i][j][k] =
+                round_keys.round_keys[i][j][k] ^ round_keys_share[0].round_keys[i][j][k];
+          }
+        }
+      }
+      break;
+    }
+    aes128_init_round_keys_masked(&round_keys_share[0], key_share);
     break;
   }
 
   // Masking the round keys
-  aes_round_keys_t round_keys_share[2];
-  for(int i = 0; i < AES_MAX_ROUNDS + 1; i++){
-    for(int j = 0; j < 8; j++){
-      for(int k = 0; k < 4; k++){
-        rand_mask(&round_keys_share[0].round_keys[i][j][k], 1);
-        round_keys_share[1].round_keys[i][j][k] = round_keys.round_keys[i][j][k] ^ round_keys_share[0].round_keys[i][j][k];
-      }
-    }
-  }
-
 
   // Step 4
   if (L_ke > 0) {
     // Key schedule constraints only needed for normal AES, not EM variant.
     for (unsigned int i = 0; i != params->faest_param.Nwd; ++i) {
-      memcpy(w_share[0] + (w - w_out), round_keys_share[0].round_keys[i / 4][i % 4], sizeof(aes_word_t));
-      memcpy(w_share[1] + (w - w_out), round_keys_share[1].round_keys[i / 4][i % 4], sizeof(aes_word_t));
+      memcpy(w_share[0] + (w - w_out), round_keys_share[0].round_keys[i / 4][i % 4],
+             sizeof(aes_word_t));
+      memcpy(w_share[1] + (w - w_out), round_keys_share[1].round_keys[i / 4][i % 4],
+             sizeof(aes_word_t));
       w += sizeof(aes_word_t);
     }
 
     for (unsigned int j = 0, ik = params->faest_param.Nwd; j < S_ke / 4; ++j) {
-      memcpy(w_share[0] + (w - w_out), round_keys_share[0].round_keys[ik / 4][ik % 4], sizeof(aes_word_t));
-      memcpy(w_share[1] + (w - w_out), round_keys_share[1].round_keys[ik / 4][ik % 4], sizeof(aes_word_t));
+      memcpy(w_share[0] + (w - w_out), round_keys_share[0].round_keys[ik / 4][ik % 4],
+             sizeof(aes_word_t));
+      memcpy(w_share[1] + (w - w_out), round_keys_share[1].round_keys[ik / 4][ik % 4],
+             sizeof(aes_word_t));
       w += sizeof(aes_word_t);
       ik += lambda == 192 ? 6 : 4;
     }
@@ -762,14 +869,8 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key, const uint8_t* in,
       shift_row(state_share[1], block_words);
 
       // Step 17
-      for (unsigned int c = 0; c < block_words; c++) {
-        for (unsigned int r = 0; r < AES_NR; r++) {
-          state[c][r] = state_share[0][c][r] ^ state_share[1][c][r];
-        }
-      }
-      
-      store_state(w_share[0] +(w-w_out), state_share[0], block_words);
-      store_state(w_share[1] +(w-w_out), state_share[1], block_words);
+      store_state(w_share[0] + (w - w_out), state_share[0], block_words);
+      store_state(w_share[1] + (w - w_out), state_share[1], block_words);
       w += sizeof(aes_word_t) * block_words;
       /*
       store_state(w, state, block_words);
@@ -787,7 +888,7 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key, const uint8_t* in,
   }
 
   // reconstruct w_share in to w
-  for(unsigned int i = 0; i < (l+7)/8; i++){
+  for (unsigned int i = 0; i < (l + 7) / 8; i++) {
     w_out[i] = w_share[0][i] ^ w_share[1][i];
   }
 
