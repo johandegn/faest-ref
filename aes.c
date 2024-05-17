@@ -629,13 +629,13 @@ static void sub_bytes_masked(aes_block_t state_share[2], unsigned int block_word
   }
 }
 
-static void sub_words_masked(bf8_t words[2][AES_NR]) {
+static void sub_words_masked(bf8_t* words) {
   for (int i = 0; i < 4; i++) {
-    bf8_t in_share[2]  = {words[0][i], words[1][i]};
+    bf8_t in_share[2]  = {words[i], words[i+AES_NR]};
     bf8_t out_share[2] = {0, 0};
     compute_sbox_masked(in_share, out_share);
-    words[0][i] = out_share[0];
-    words[1][i] = out_share[1];
+    words[i] = out_share[0];
+    words[i+AES_NR] = out_share[1];
   }
 }
 
@@ -672,12 +672,12 @@ void expand_128key_masked(aes_round_keys_t* round_keys_share, const uint8_t* key
     if (k % key_words == 0) {
       rot_word(tmp_share[0]);
       rot_word(tmp_share[1]);
-      sub_words_masked(tmp_share);
+      sub_words_masked(&tmp_share[0][0]);
       tmp_share[0][0] ^= round_constants[(k / key_words) - 1];
     }
 
     if (key_words > 6 && (k % key_words) == 4) {
-      sub_words_masked(tmp_share);
+      sub_words_masked(&tmp_share[0][0]);
     }
     unsigned int m = k - key_words;
     round_keys_share[0].round_keys[k / block_words][k % block_words][0] =
@@ -703,7 +703,7 @@ void aes128_init_round_keys_masked(aes_round_keys_t* round_key_share, const uint
   expand_128key_masked(round_key_share, key, KEY_WORDS_128, AES_BLOCK_WORDS, ROUNDS_128);
 }
 
-uint8_t* aes_extend_witness_masked(const uint8_t* key_share, const uint8_t* in,
+uint8_t* aes_extend_witness_masked(const uint8_t* key_share, const uint8_t* in_share,
                                    const faest_paramset_t* params, uint8_t* w) {
   const unsigned int lambda     = params->faest_param.lambda;
   const unsigned int l          = params->faest_param.l;
@@ -742,12 +742,17 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key_share, const uint8_t* in,
   }
 
   // Reconstruct key if not running 128 variant
-  // All other variants are not masked yet!  
+  // All other variants are not masked yet!
   uint8_t* key;
+  uint8_t* in;
   if (!L_ke || lambda != 128) {
     key = alloca(MAX_LAMBDA_BYTES);
     for (int i = 0; i < MAX_LAMBDA_BYTES; i++) {
       key[i] = key_share[i] ^ key_share[i + MAX_LAMBDA_BYTES];
+    }
+    in = alloca(MAX_LAMBDA_BYTES);
+    for (int i = 0; i < MAX_LAMBDA_BYTES; i++) {
+      in[i] = in_share[i] ^ in_share[i + MAX_LAMBDA_BYTES];
     }
   }
   if (!L_ke) {
@@ -842,17 +847,22 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key_share, const uint8_t* in,
   // Step 10
   for (unsigned b = 0; b < beta; ++b, in += sizeof(aes_word_t) * block_words) {
     // Step 12
-    aes_block_t state;
-    load_state(state, in, block_words);
 
     // Masking the input state for encryption
     // The state we mask are taken from the pk, hence it is public, the all states after are secret.
     aes_block_t state_share[2] = {0};
-    for (unsigned int c = 0; c < block_words; c++) {
-      for (unsigned int r = 0; r < AES_NR; r++) {
-        rand_mask(&state_share[0][c][r], 1);
-        state_share[1][c][r] = state[c][r] ^ state_share[0][c][r];
+    if (!L_ke || lambda != 128) {
+      aes_block_t state;
+      load_state(state, in, block_words);
+      for (unsigned int c = 0; c < block_words; c++) {
+        for (unsigned int r = 0; r < AES_NR; r++) {
+          rand_mask(&state_share[0][c][r], 1);
+          state_share[1][c][r] = state[c][r] ^ state_share[0][c][r];
+        }
       }
+    } else {
+      load_state(state_share[0], in_share, block_words);
+      load_state(state_share[1], in_share + MAX_LAMBDA_BYTES, block_words);
     }
     // Step 13
     add_round_key(0, state_share[0], &round_keys_share[0], block_words);

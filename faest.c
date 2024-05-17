@@ -351,8 +351,16 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
     rand_mask(&key_share[0][i], 1);
     key_share[1][i] = owf_key[i] ^ key_share[0][i];
   }
+  // secret sharing the input, (Not needed only to remove false positive leakage)
+  uint8_t owf_input_share[2][MAX_LAMBDA_BYTES] = {0};
+  for (int i = 0; i < MAX_LAMBDA_BYTES; i++) {
+    rand_mask(&owf_input_share[0][i], 1);
+    owf_input_share[1][i] = owf_input[i] ^ owf_input_share[0][i];
+  }
+
+  w_share    = aes_extend_witness_masked(&key_share[0][0], &owf_input_share[0][0], params, w_share);
+  
   uint8_t* w = alloca((l + 7) / 8);
-  w_share    = aes_extend_witness_masked(&key_share[0][0], owf_input, params, w_share);
   for (unsigned int i = 0; i < (l + 7) / 8; i++) {
     w[i] = w_share[i] ^ w_share[i + (l + 7) / 8];
   }
