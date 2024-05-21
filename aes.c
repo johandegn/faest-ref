@@ -631,11 +631,11 @@ static void sub_bytes_masked(aes_block_t state_share[2], unsigned int block_word
 
 static void sub_words_masked(bf8_t* words) {
   for (int i = 0; i < 4; i++) {
-    bf8_t in_share[2]  = {words[i], words[i+AES_NR]};
+    bf8_t in_share[2]  = {words[i], words[i + AES_NR]};
     bf8_t out_share[2] = {0, 0};
     compute_sbox_masked(in_share, out_share);
-    words[i] = out_share[0];
-    words[i+AES_NR] = out_share[1];
+    words[i]          = out_share[0];
+    words[i + AES_NR] = out_share[1];
   }
 }
 
@@ -701,6 +701,30 @@ void expand_128key_masked(aes_round_keys_t* round_keys_share, const uint8_t* key
 
 void aes128_init_round_keys_masked(aes_round_keys_t* round_key_share, const uint8_t* key) {
   expand_128key_masked(round_key_share, key, KEY_WORDS_128, AES_BLOCK_WORDS, ROUNDS_128);
+}
+
+uint8_t* init_round_0_key(uint8_t* w_share[2], uint8_t* w, uint8_t* w_out, const faest_paramset_t* params,
+                      const aes_round_keys_t round_keys_share[2]) {
+  const unsigned int S_ke       = params->faest_param.Ske;
+  const unsigned int lambda     = params->faest_param.lambda;
+  // Key schedule constraints only needed for normal AES, not EM variant.
+  for (unsigned int i = 0; i != params->faest_param.Nwd; ++i) {
+    memcpy(w_share[0] + (w - w_out), round_keys_share[0].round_keys[i / 4][i % 4],
+           sizeof(aes_word_t));
+    memcpy(w_share[1] + (w - w_out), round_keys_share[1].round_keys[i / 4][i % 4],
+           sizeof(aes_word_t));
+    w += sizeof(aes_word_t);
+  }
+
+  for (unsigned int j = 0, ik = params->faest_param.Nwd; j < S_ke / 4; ++j) {
+    memcpy(w_share[0] + (w - w_out), round_keys_share[0].round_keys[ik / 4][ik % 4],
+           sizeof(aes_word_t));
+    memcpy(w_share[1] + (w - w_out), round_keys_share[1].round_keys[ik / 4][ik % 4],
+           sizeof(aes_word_t));
+    w += sizeof(aes_word_t);
+    ik += lambda == 192 ? 6 : 4;
+  }
+  return w;
 }
 
 uint8_t* aes_extend_witness_masked(const uint8_t* key_share, const uint8_t* in_share,
@@ -820,23 +844,7 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key_share, const uint8_t* in_s
 
   // Step 4
   if (L_ke > 0) {
-    // Key schedule constraints only needed for normal AES, not EM variant.
-    for (unsigned int i = 0; i != params->faest_param.Nwd; ++i) {
-      memcpy(w_share[0] + (w - w_out), round_keys_share[0].round_keys[i / 4][i % 4],
-             sizeof(aes_word_t));
-      memcpy(w_share[1] + (w - w_out), round_keys_share[1].round_keys[i / 4][i % 4],
-             sizeof(aes_word_t));
-      w += sizeof(aes_word_t);
-    }
-
-    for (unsigned int j = 0, ik = params->faest_param.Nwd; j < S_ke / 4; ++j) {
-      memcpy(w_share[0] + (w - w_out), round_keys_share[0].round_keys[ik / 4][ik % 4],
-             sizeof(aes_word_t));
-      memcpy(w_share[1] + (w - w_out), round_keys_share[1].round_keys[ik / 4][ik % 4],
-             sizeof(aes_word_t));
-      w += sizeof(aes_word_t);
-      ik += lambda == 192 ? 6 : 4;
-    }
+    w = init_round_0_key(w_share, w, w_out, params, round_keys_share);
   } else {
     // saving the OWF key to the extended witness
     memcpy(w_share[0] + (w - w_out), in, lambda / 8);
