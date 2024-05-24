@@ -164,10 +164,14 @@ bf128_t bf128_byte_combine(const bf128_t* x) {
   }
   return bf_out;
 }
-bf128_t bf128_byte_combine_vk(vbb_t* vbb, unsigned int offset) {
-  bf128_t bf_out = *get_vk_128(vbb, offset);
+bf128_t bf128_byte_combine_vk(vbb_t* vbb, unsigned int offset){
+  return bf128_byte_combine_vk_share(vbb, offset, 0);
+}
+
+bf128_t bf128_byte_combine_vk_share(vbb_t* vbb, unsigned int offset, int share) {
+  bf128_t bf_out = *get_vk_128_share(vbb, offset, share);
   for (unsigned int i = 1; i < 8; ++i) {
-    bf_out = bf128_add(bf_out, bf128_mul(*get_vk_128(vbb, offset + i), bf128_alpha[i - 1]));
+    bf_out = bf128_add(bf_out, bf128_mul(*get_vk_128_share(vbb, offset + i, share), bf128_alpha[i - 1]));
   }
   return bf_out;
 }
