@@ -379,6 +379,13 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
   uint8_t b_tilde[MAX_LAMBDA_BYTES];
   aes_prove(w, &vbb, owf_input, owf_output, chall_2, signature_a_tilde(sig, params), b_tilde,
             params);
+  
+  // print b_tilde
+  printf("b_tilde: ");
+  for (int i = 0; i < lambdaBytes; i++) {
+    printf("%02x", b_tilde[i]);
+  }
+  printf("\n");
 
   // free(w);
   // w = NULL;
@@ -451,6 +458,11 @@ int faest_verify(const uint8_t* msg, size_t msglen, const uint8_t* sig, const ui
   uint8_t* b_tilde =
       aes_verify(&vbb, chall_2, dsignature_chall_3(sig, params), dsignature_a_tilde(sig, params),
                  owf_input, owf_output, params, q_tilde);
+
+  printf("b_tilde: ");
+  for (int i = 0; i < lambdaBytes; i++) {
+    printf("%02x", b_tilde[i]);
+  }
 
   uint8_t chall_3[MAX_LAMBDA_BYTES];
   hash_challenge_3(chall_3, chall_2, dsignature_a_tilde(sig, params), b_tilde, lambda);

@@ -40,6 +40,7 @@ struct vbb_t {
   // Masking
   uint8_t* v_mask_cache;
   uint8_t* vk_mask_cache;
+  uint8_t* u_mask_cache;
 };
 
 // Signer
@@ -79,5 +80,6 @@ void setup_mask_storage(vbb_t* vbb);
 void reconstruct_vole(vbb_t* vbb);
 const bf128_t* get_vole_aes_128_share(vbb_t* vbb, unsigned int idx, unsigned int share);
 const bf128_t* get_vk_128_share(vbb_t* vbb, unsigned int idx, unsigned int share);
+const uint8_t* get_vole_u_share(vbb_t* vbb, unsigned int share);
 
 #endif

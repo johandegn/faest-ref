@@ -628,49 +628,60 @@ const bf256_t* get_vk_256(vbb_t* vbb, unsigned int idx) {
 // Masking
 void setup_mask_storage(vbb_t* vbb) {
   assert(vbb->full_size == true);
-  const unsigned int lambda       = vbb->params->faest_param.lambda;
-  const unsigned int lambdaBytes  = lambda / 8;
-  const unsigned int ellhat       = vbb->params->faest_param.l + lambda * 2 + UNIVERSAL_HASH_B_BITS;
-  
+  const unsigned int lambda      = vbb->params->faest_param.lambda;
+  const unsigned int lambdaBytes = lambda / 8;
+  const unsigned int ellhat      = vbb->params->faest_param.l + lambda * 2 + UNIVERSAL_HASH_B_BITS;
+
   // Vk masking
   vbb->vk_mask_cache = malloc(vbb->params->faest_param.Lke * lambdaBytes);
-  for(unsigned int i = 0; i < vbb->params->faest_param.Lke * lambda/8; i++) {
+  for (unsigned int i = 0; i < vbb->params->faest_param.Lke * lambda / 8; i++) {
     rand_mask(vbb->vk_mask_cache + i, 1);
   }
-  for (unsigned int i = 0; i < vbb->params->faest_param.Lke * lambda/8; i++) {
+  for (unsigned int i = 0; i < vbb->params->faest_param.Lke * lambda / 8; i++) {
     vbb->vk_cache[i] ^= vbb->vk_mask_cache[i];
   }
 
   // Vole masking
   vbb->v_mask_cache = malloc(ellhat * lambdaBytes);
-  for(unsigned int i = 0; i < ellhat*lambdaBytes; i++) {
+  for (unsigned int i = 0; i < ellhat * lambdaBytes; i++) {
     rand_mask(vbb->v_mask_cache + i, 1);
   }
-  for(unsigned int i = 0; i < ellhat*lambdaBytes; i++){
+  for (unsigned int i = 0; i < ellhat * lambdaBytes; i++) {
     vbb->vole_cache[i] ^= vbb->v_mask_cache[i];
+  }
+
+  vbb->u_mask_cache = malloc(ellhat / 8);
+  for (unsigned int i = 0; i < ellhat / 8; i++) {
+    rand_mask(vbb->u_mask_cache + i, 1);
+  }
+  for (unsigned int i = 0; i < ellhat / 8; i++) {
+    vbb->vole_U[i] ^= vbb->u_mask_cache[i];
   }
 }
 
-void reconstruct_vole(vbb_t* vbb){
-  const unsigned int lambda       = vbb->params->faest_param.lambda;
-  const unsigned int ellhat       = vbb->params->faest_param.l + lambda * 2 + UNIVERSAL_HASH_B_BITS;
+void reconstruct_vole(vbb_t* vbb) {
+  const unsigned int lambda = vbb->params->faest_param.lambda;
+  const unsigned int ellhat = vbb->params->faest_param.l + lambda * 2 + UNIVERSAL_HASH_B_BITS;
   // Reconstruct vk
-  for(unsigned int i = 0; i < vbb->params->faest_param.Lke * lambda/8; i++){
+  for (unsigned int i = 0; i < vbb->params->faest_param.Lke * lambda / 8; i++) {
     vbb->vk_cache[i] ^= vbb->vk_mask_cache[i];
   }
 
   // Reconstruct vole
-  for(unsigned int i = 0; i < ellhat*lambda/8; i++){
+  for (unsigned int i = 0; i < ellhat * lambda / 8; i++) {
     vbb->vole_cache[i] ^= vbb->v_mask_cache[i];
+  }
+  for (unsigned int i = 0; i < ellhat / 8; i++) {
+    vbb->vole_U[i] ^= vbb->u_mask_cache[i];
   }
 }
 
 const bf128_t* get_vole_aes_128_share(vbb_t* vbb, unsigned int idx, unsigned int share) {
   if (share == 1) {
-    //printf(" ");
+    // printf(" ");
     const unsigned int lambda       = vbb->params->faest_param.lambda;
     const unsigned int lambda_bytes = lambda / 8;
-    const unsigned int ellhat       = vbb->params->faest_param.l + lambda * 2 + UNIVERSAL_HASH_B_BITS;
+    const unsigned int ellhat = vbb->params->faest_param.l + lambda * 2 + UNIVERSAL_HASH_B_BITS;
     const unsigned int ellhat_bytes = ellhat / 8;
 
     memset(vbb->v_buf, 0, lambda_bytes);
@@ -685,12 +696,20 @@ const bf128_t* get_vole_aes_128_share(vbb_t* vbb, unsigned int idx, unsigned int
   }
 }
 
-const bf128_t* get_vk_128_share(vbb_t* vbb, unsigned int idx, unsigned int share){
-  if (share == 1){
-    uint8_t* tmp = vbb->vk_cache;
-    vbb->vk_cache = vbb->vk_mask_cache;
+const uint8_t* get_vole_u_share(vbb_t* vbb, unsigned int share) {
+  if (share == 1) {
+    return vbb->u_mask_cache;
+  } else {
+    return vbb->vole_U;
+  }
+}
+
+const bf128_t* get_vk_128_share(vbb_t* vbb, unsigned int idx, unsigned int share) {
+  if (share == 1) {
+    uint8_t* tmp      = vbb->vk_cache;
+    vbb->vk_cache     = vbb->vk_mask_cache;
     const bf128_t* vk = get_vk_128(vbb, idx);
-    vbb->vk_cache = tmp;
+    vbb->vk_cache     = tmp;
     return vk;
   } else {
     return get_vk_128(vbb, idx);
