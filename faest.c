@@ -357,6 +357,11 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
     rand_mask(&owf_input_share[0][i], 1);
     owf_input_share[1][i] = owf_input[i] ^ owf_input_share[0][i];
   }
+  uint8_t owf_output_share[2][16];
+  for(int i = 0; i < 16; i++){
+    rand_mask(&owf_output_share[0][i], 1);
+    owf_output_share[1][i] = owf_output[i] ^ owf_output_share[0][i];
+  }
 
   w_share    = aes_extend_witness_masked(&key_share[0][0], &owf_input_share[0][0], params, w_share);
   
@@ -377,15 +382,20 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
 
   prepare_aes_sign(&vbb);
   uint8_t b_tilde[MAX_LAMBDA_BYTES];
+
+#ifdef WITNESS_MASKING
+  if(params->faest_paramid == 1 || params->faest_paramid == 2){
+    setup_mask_storage(&vbb);
+    aes_prove_masked(w_share, &vbb, &owf_input_share[0][0], &owf_output_share[0][0], chall_2, signature_a_tilde(sig, params), b_tilde,
+              params);
+  } else{
+    aes_prove(w, &vbb, owf_input, owf_output, chall_2, signature_a_tilde(sig, params), b_tilde,
+              params);
+  }
+#else
   aes_prove(w, &vbb, owf_input, owf_output, chall_2, signature_a_tilde(sig, params), b_tilde,
             params);
-  
-  // print b_tilde
-  printf("b_tilde: ");
-  for (int i = 0; i < lambdaBytes; i++) {
-    printf("%02x", b_tilde[i]);
-  }
-  printf("\n");
+#endif
 
   // free(w);
   // w = NULL;
@@ -458,11 +468,6 @@ int faest_verify(const uint8_t* msg, size_t msglen, const uint8_t* sig, const ui
   uint8_t* b_tilde =
       aes_verify(&vbb, chall_2, dsignature_chall_3(sig, params), dsignature_a_tilde(sig, params),
                  owf_input, owf_output, params, q_tilde);
-
-  printf("b_tilde: ");
-  for (int i = 0; i < lambdaBytes; i++) {
-    printf("%02x", b_tilde[i]);
-  }
 
   uint8_t chall_3[MAX_LAMBDA_BYTES];
   hash_challenge_3(chall_3, chall_2, dsignature_a_tilde(sig, params), b_tilde, lambda);
