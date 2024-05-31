@@ -381,19 +381,21 @@ static void aes_key_schedule_constraints_Mkey_0_128_masked(const uint8_t* w_shar
 
     // Step: 13..17
     for (unsigned int r = 0; r <= 3; r++) {
-      // instead of storing in A0, A1, hash it     
-      const bf128_t tmp_0 = bf128_add(bf128_mul(bf_v_k_hat_share[0][r], bf_v_w_dash_hat_share[0][r]), bf128_mul(bf_v_k_hat_share[0][r], bf_v_w_dash_hat_share[1][r]));
-      const bf128_t tmp_1 = bf128_add(bf128_mul(bf_v_k_hat_share[1][r], bf_v_w_dash_hat_share[0][r]), bf128_mul(bf_v_k_hat_share[1][r], bf_v_w_dash_hat_share[1][r]));
+      // instead of storing in A0, A1, hash it
+      bf128_t mask = bf128_zero();
+      rand_mask((uint8_t*)mask.values, 16);     
+      const bf128_t tmp_0 = bf128_add(bf128_mul(bf_v_k_hat_share[0][r], bf_v_w_dash_hat_share[0][r]), bf128_add(bf128_mul(bf_v_k_hat_share[0][r], bf_v_w_dash_hat_share[1][r]), mask));
+      const bf128_t tmp_1 = bf128_add(bf128_mul(bf_v_k_hat_share[1][r], bf_v_w_dash_hat_share[0][r]), bf128_add(bf128_mul(bf_v_k_hat_share[1][r], bf_v_w_dash_hat_share[1][r]), mask));
       zk_hash_128_update(a0_ctx, tmp_0);
       zk_hash_128_update(a0_ctx + 1, tmp_1);
       
-
+      rand_mask((uint8_t*)mask.values, 16);
       const bf128_t part_a = bf128_add(bf_v_k_hat_share[0][r], bf_k_hat_share[0][r]);
       const bf128_t part_b = bf128_add(bf_w_dash_hat_share[0][r], bf_v_w_dash_hat_share[0][r]);
       const bf128_t part_c = bf128_add(bf_w_dash_hat_share[1][r], bf_v_w_dash_hat_share[1][r]);
       const bf128_t part_d = bf128_add(bf_v_k_hat_share[1][r], bf_k_hat_share[1][r]);
-      const bf128_t share_0 = bf128_add(bf128_add(bf128_mul(part_a, part_b),bf128_mul(part_a, part_c)), tmp_0);
-      const bf128_t share_1 = bf128_add(bf128_add(bf128_add(bf128_mul(part_d, part_b),bf128_mul(part_d, part_c)), tmp_1), bf128_one());
+      const bf128_t share_0 = bf128_add(bf128_add(bf128_mul(part_a, part_b), bf128_add(bf128_mul(part_a, part_c),mask)), tmp_0);
+      const bf128_t share_1 = bf128_add(bf128_add(bf128_add(bf128_mul(part_d, part_b),bf128_add(bf128_mul(part_d, part_c),mask)), tmp_1), bf128_one());
       zk_hash_128_update(a1_ctx, share_0);
       zk_hash_128_update(a1_ctx+ 1, share_1);
       
@@ -956,18 +958,21 @@ static void aes_enc_constraints_Mkey_0_128_masked(const uint8_t* in_share, const
   aes_enc_backward_128_vbb_linear_access_share(vbb, offset, 1, 0, NULL, out_share, &vs_dash_share[0][0]);
 
   for (unsigned int j = 0; j < FAEST_128F_Senc; j++) {
-    // instead of storing in A0, A!, hash it    
-    const bf128_t tmp_0 = bf128_add(bf128_mul(vs_share[0][j], vs_dash_share[0][j]), bf128_mul(vs_share[0][j], vs_dash_share[1][j]));
-    const bf128_t tmp_1 = bf128_add(bf128_mul(vs_share[1][j], vs_dash_share[0][j]), bf128_mul(vs_share[1][j], vs_dash_share[1][j]));
+    // instead of storing in A0, A!, hash it
+    bf128_t mask = bf128_zero();
+    rand_mask((uint8_t*)mask.values, 16);
+    const bf128_t tmp_0 = bf128_add(bf128_mul(vs_share[0][j], vs_dash_share[0][j]), bf128_add(bf128_mul(vs_share[0][j], vs_dash_share[1][j]), mask));
+    const bf128_t tmp_1 = bf128_add(bf128_mul(vs_share[1][j], vs_dash_share[0][j]), bf128_add(bf128_mul(vs_share[1][j], vs_dash_share[1][j]), mask));
     zk_hash_128_update(a0_ctx, tmp_0);
     zk_hash_128_update(a0_ctx + 1, tmp_1);
 
+    rand_mask((uint8_t*)mask.values, 16);
     const bf128_t part_a = bf128_add(vs_share[0][j], s_share[0][j]);
     const bf128_t part_b = bf128_add(s_dash_share[0][j], vs_dash_share[0][j]);
     const bf128_t part_c = bf128_add(s_dash_share[1][j], vs_dash_share[1][j]);
     const bf128_t part_d = bf128_add(vs_share[1][j], s_share[1][j]);
-    const bf128_t share_0 = bf128_add(bf128_add(bf128_mul(part_a, part_b),bf128_mul(part_a, part_c)), tmp_0);
-    const bf128_t share_1 = bf128_add(bf128_add(bf128_add(bf128_mul(part_d, part_b),bf128_mul(part_d, part_c)), tmp_1), bf128_one());
+    const bf128_t share_0 = bf128_add(bf128_add(bf128_mul(part_a, part_b), bf128_add(bf128_mul(part_a, part_c),mask)), tmp_0);
+    const bf128_t share_1 = bf128_add(bf128_add(bf128_add(bf128_mul(part_d, part_b),bf128_add(bf128_mul(part_d, part_c),mask)), tmp_1), bf128_one());
     zk_hash_128_update(a1_ctx, share_0);
     zk_hash_128_update(a1_ctx+ 1, share_1);
     
