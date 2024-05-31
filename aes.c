@@ -557,13 +557,15 @@ uint8_t* aes_extend_witness(const uint8_t* key, const uint8_t* in, const faest_p
 // #######################
 
 void bf8_square_masked(bf8_t in_share[2], bf8_t out_share[2]) {
-  out_share[0] = bf8_add(bf8_mul(in_share[0], in_share[0]), bf8_mul(in_share[0], in_share[1]));
-  out_share[1] = bf8_add(bf8_mul(in_share[1], in_share[0]), bf8_mul(in_share[1], in_share[1]));
+  out_share[0] = bf8_mul(in_share[0], in_share[0]);
+  out_share[1] = bf8_mul(in_share[1], in_share[1]);
 }
 
 void bf8_mul_masked(bf8_t a[2], bf8_t b[2], bf8_t out_share[2]) {
-  out_share[0] = bf8_add(bf8_mul(a[0], b[0]), bf8_mul(a[0], b[1]));
-  out_share[1] = bf8_add(bf8_mul(a[1], b[0]), bf8_mul(a[1], b[1]));
+  bf8_t mask = 0;
+  rand_mask(mask, 1);
+  out_share[0] = bf8_add(bf8_mul(a[0], b[0]), bf8_add(bf8_mul(a[0], b[1]), mask));
+  out_share[1] = bf8_add(bf8_mul(a[1], b[0]), bf8_add(bf8_mul(a[1], b[1]), mask));
 }
 
 void bf8_inv_masked(bf8_t in_share[2], bf8_t out_share[2]) {
