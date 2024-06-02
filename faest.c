@@ -263,6 +263,10 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
   hash_mu(mu, owf_input, owf_output, params->faest_param.pkSize / 2, msg, msglen, lambda);
 
   uint8_t rootkey[MAX_LAMBDA_BYTES];
+  uint8_t key_share[2][MAX_LAMBDA_BYTES]       = {0};
+  uint8_t owf_input_share[2][MAX_LAMBDA_BYTES] = {0};
+  uint8_t owf_output_share[2][16];
+
   {
 #ifdef KECCAK_MASK_NONE
     H3_context_t h3_ctx;
@@ -290,6 +294,20 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
     for (size_t i = 0; i < lambdaBytes; i++) {
       owf_key_share1[i] = owf_key[i] ^ owf_key_share0[i];
     }
+
+    for (int i = 0; i < MAX_LAMBDA_BYTES; i++) {
+      rand_mask(&key_share[0][i], 1);
+      key_share[1][i] = owf_key[i] ^ key_share[0][i];
+    }
+    for (int i = 0; i < MAX_LAMBDA_BYTES; i++) {
+      rand_mask(&owf_input_share[0][i], 1);
+      owf_input_share[1][i] = owf_input[i] ^ owf_input_share[0][i];
+    }
+    for (int i = 0; i < 16; i++) {
+      rand_mask(&owf_output_share[0][i], 1);
+      owf_output_share[1][i] = owf_output[i] ^ owf_output_share[0][i];
+    }
+
     H3_init(&h3_ctx, lambda);
     H3_update(&h3_ctx, owf_key_shares, lambdaBytes);
     H3_update(&h3_ctx, mu_shares, lambdaBytes * 2);
@@ -345,36 +363,20 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
 #define WITNESS_MASKING
 #ifdef WITNESS_MASKING
   // secret sharing the key and then computing the extended witness
-  uint8_t* w_share                       = alloca(2 * (l + 7) / 8);
-  uint8_t key_share[2][MAX_LAMBDA_BYTES] = {0};
-  for (int i = 0; i < MAX_LAMBDA_BYTES; i++) {
-    rand_mask(&key_share[0][i], 1);
-    key_share[1][i] = owf_key[i] ^ key_share[0][i];
-  }
-  // secret sharing the input, (Not needed only to remove false positive leakage)
-  uint8_t owf_input_share[2][MAX_LAMBDA_BYTES] = {0};
-  for (int i = 0; i < MAX_LAMBDA_BYTES; i++) {
-    rand_mask(&owf_input_share[0][i], 1);
-    owf_input_share[1][i] = owf_input[i] ^ owf_input_share[0][i];
-  }
-  uint8_t owf_output_share[2][16];
-  for(int i = 0; i < 16; i++){
-    rand_mask(&owf_output_share[0][i], 1);
-    owf_output_share[1][i] = owf_output[i] ^ owf_output_share[0][i];
-  }
+  uint8_t* w_share = alloca(2 * (l + 7) / 8);
 
-  w_share    = aes_extend_witness_masked(&key_share[0][0], &owf_input_share[0][0], params, w_share);
-  
-  uint8_t* w = alloca((l + 7) / 8);
-  for (unsigned int i = 0; i < (l + 7) / 8; i++) {
-    w[i] = w_share[i] ^ w_share[i + (l + 7) / 8];
-  }
+  // secret sharing the input, (Not needed only to remove false positive leakage)
+
+  w_share = aes_extend_witness_masked(&key_share[0][0], &owf_input_share[0][0], params, w_share);
+
+  xor_u8_array(w_share, get_vole_u(&vbb), signature_d(sig, params), ell_bytes);
+  xor_u8_array(w_share + (l + 7) / 8, signature_d(sig, params), signature_d(sig, params),
+               ell_bytes);
 #else
   uint8_t* w = alloca((l + 7) / 8);
   w          = aes_extend_witness(owf_key, owf_input, params, w);
-#endif
-
   xor_u8_array(w, get_vole_u(&vbb), signature_d(sig, params), ell_bytes);
+#endif
 
   uint8_t chall_2[3 * MAX_LAMBDA_BYTES + 8];
   hash_challenge_2(chall_2, chall_1, signature_u_tilde(sig, params), h_v, signature_d(sig, params),
@@ -384,11 +386,18 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
   uint8_t b_tilde[MAX_LAMBDA_BYTES];
 
 #ifdef WITNESS_MASKING
-  if(params->faest_paramid == 1 || params->faest_paramid == 2){
-    setup_mask_storage(&vbb);
-    aes_prove_masked(w_share, &vbb, &owf_input_share[0][0], &owf_output_share[0][0], chall_2, signature_a_tilde(sig, params), b_tilde,
-              params);
-  } else{
+  if (params->faest_paramid == 1 || params->faest_paramid == 2) {
+    uint8_t* vk_mask = alloca(params->faest_param.Lke * lambdaBytes);
+    uint8_t* v_mask = alloca(ell_hat * lambdaBytes);
+    uint8_t* u_mask = alloca(ell_hat/8);
+    setup_mask_storage(&vbb, vk_mask, v_mask, u_mask);
+    aes_prove_masked(w_share, &vbb, &owf_input_share[0][0], &owf_output_share[0][0], chall_2,
+                     signature_a_tilde(sig, params), b_tilde, params);
+  } else {
+    uint8_t* w = alloca((l + 7) / 8);
+    for (unsigned int i = 0; i < (l + 7) / 8; i++) {
+      w[i] = w_share[i] ^ w_share[i + (l + 7) / 8];
+    }
     aes_prove(w, &vbb, owf_input, owf_output, chall_2, signature_a_tilde(sig, params), b_tilde,
               params);
   }

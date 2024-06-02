@@ -626,14 +626,14 @@ const bf256_t* get_vk_256(vbb_t* vbb, unsigned int idx) {
 }
 
 // Masking
-void setup_mask_storage(vbb_t* vbb) {
+void setup_mask_storage(vbb_t* vbb, uint8_t* vk_mask, uint8_t* v_mask, uint8_t* u_mask) {
   assert(vbb->full_size == true);
   const unsigned int lambda      = vbb->params->faest_param.lambda;
   const unsigned int lambdaBytes = lambda / 8;
   const unsigned int ellhat      = vbb->params->faest_param.l + lambda * 2 + UNIVERSAL_HASH_B_BITS;
 
   // Vk masking
-  vbb->vk_mask_cache = malloc(vbb->params->faest_param.Lke * lambdaBytes);
+  vbb->vk_mask_cache = vk_mask;//malloc(vbb->params->faest_param.Lke * lambdaBytes);
   for (unsigned int i = 0; i < vbb->params->faest_param.Lke * lambda / 8; i++) {
     rand_mask(vbb->vk_mask_cache + i, 1);
   }
@@ -642,7 +642,7 @@ void setup_mask_storage(vbb_t* vbb) {
   }
 
   // Vole masking
-  vbb->v_mask_cache = malloc(ellhat * lambdaBytes);
+  vbb->v_mask_cache = v_mask;//malloc(ellhat * lambdaBytes);
   for (unsigned int i = 0; i < ellhat * lambdaBytes; i++) {
     rand_mask(vbb->v_mask_cache + i, 1);
   }
@@ -650,7 +650,7 @@ void setup_mask_storage(vbb_t* vbb) {
     vbb->vole_cache[i] ^= vbb->v_mask_cache[i];
   }
 
-  vbb->u_mask_cache = malloc(ellhat / 8);
+  vbb->u_mask_cache = u_mask;//malloc(ellhat / 8);
   for (unsigned int i = 0; i < ellhat / 8; i++) {
     rand_mask(vbb->u_mask_cache + i, 1);
   }
