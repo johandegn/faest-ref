@@ -20,18 +20,17 @@ ATTR_CONST ATTR_ALWAYS_INLINE static inline bool is_em_variant(faest_paramid_t i
   return id > 6;
 }
 
-ATTR_CONST ATTR_ALWAYS_INLINE static bool is_column_cached(vbb_t* vbb, unsigned int index) {
+ATTR_CONST ATTR_ALWAYS_INLINE static inline bool is_column_cached(vbb_t* vbb, unsigned int index) {
   bool above_cache_start = index >= vbb->cache_idx;
-  bool below_cache_end = index < vbb->cache_idx + vbb->column_count;
+  bool below_cache_end   = index < vbb->cache_idx + vbb->column_count;
   return above_cache_start && below_cache_end;
 }
 
-ATTR_CONST ATTR_ALWAYS_INLINE static bool is_row_cached(vbb_t* vbb, unsigned int index) {
+ATTR_CONST ATTR_ALWAYS_INLINE static inline bool is_row_cached(vbb_t* vbb, unsigned int index) {
   bool above_cache_start = index >= vbb->cache_idx;
-  bool below_cache_end = index < vbb->cache_idx + vbb->row_count;
+  bool below_cache_end   = index < vbb->cache_idx + vbb->row_count;
   return above_cache_start && below_cache_end;
 }
-
 
 static void recompute_hash_sign(vbb_t* vbb, unsigned int start, unsigned int end) {
   const unsigned int lambda = vbb->params->faest_param.lambda;
@@ -39,10 +38,8 @@ static void recompute_hash_sign(vbb_t* vbb, unsigned int start, unsigned int end
   const unsigned int ellhat = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
   unsigned int capped_end   = MIN(end, lambda);
 
-  partial_vole_commit_cmo(vbb->root_key, vbb->iv, ellhat, 
-                          start, capped_end,
-                          vole_mode_v(vbb->vole_cache),
-                          vbb->params);
+  partial_vole_commit_cmo(vbb->root_key, vbb->iv, ellhat, start, capped_end,
+                          vole_mode_v(vbb->vole_cache), vbb->params);
   vbb->cache_idx = start;
 }
 
@@ -50,7 +47,7 @@ static void recompute_aes_sign(vbb_t* vbb, unsigned int start, unsigned int len)
   const unsigned int lambda = vbb->params->faest_param.lambda;
   const unsigned int ell    = vbb->params->faest_param.l;
 
-  if(start >= ell){
+  if (start >= ell) {
     start = start - len + 1;
   }
   if (len >= ell + lambda) {
@@ -191,10 +188,8 @@ static void recompute_hash_verify(vbb_t* vbb, unsigned int start, unsigned int l
   const uint8_t* com[MAX_TAU];
   setup_pdec_com(vbb, pdec, com);
 
-  partial_vole_reconstruct_cmo(vbb->iv, chall3, pdec, com, ell_hat,
-                               start, amount,
-                               vole_mode_q(vbb->vole_cache),
-                               vbb->params);
+  partial_vole_reconstruct_cmo(vbb->iv, chall3, pdec, com, ell_hat, start, amount,
+                               vole_mode_q(vbb->vole_cache), vbb->params);
   apply_correction_values_cmo(vbb, start, amount);
   vbb->cache_idx = start;
 }
@@ -313,7 +308,7 @@ static void recompute_aes_verify(vbb_t* vbb, unsigned int start, unsigned int le
   const unsigned int ell     = vbb->params->faest_param.l;
   const unsigned int ell_hat = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
 
-  if(start >= ell){
+  if (start >= ell) {
     start = start - len + 1;
   }
   if (len >= ell + lambda) {
@@ -367,9 +362,11 @@ void init_vbb_verify(vbb_t* vbb, unsigned int len, const faest_paramset_t* param
   const uint8_t* com[MAX_TAU];
   setup_pdec_com(vbb, pdec, com);
 
-  verify_vole_mode_ctx_t vole_mode = (vbb->full_size) ? vole_mode_all_verify(vbb->vole_cache, vbb->com_hash)
-                                                      : vole_mode_hcom(vbb->com_hash);
-  partial_vole_reconstruct_cmo(vbb->iv, chall3, pdec, com, ell_hat, 0, lambda, vole_mode, vbb->params);
+  verify_vole_mode_ctx_t vole_mode = (vbb->full_size)
+                                         ? vole_mode_all_verify(vbb->vole_cache, vbb->com_hash)
+                                         : vole_mode_hcom(vbb->com_hash);
+  partial_vole_reconstruct_cmo(vbb->iv, chall3, pdec, com, ell_hat, 0, lambda, vole_mode,
+                               vbb->params);
   if (vbb->full_size) {
     apply_correction_values_cmo(vbb, 0, lambda);
   }
@@ -441,7 +438,6 @@ const uint8_t* get_vole_q_hash(vbb_t* vbb, unsigned int idx) {
   const unsigned int ell           = vbb->params->faest_param.l;
   const unsigned int ell_hat       = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
   const unsigned int ell_hat_bytes = (ell_hat + 7) / 8;
-
 
   if (!is_column_cached(vbb, idx)) {
     unsigned int cmo_budget = vbb->column_count;

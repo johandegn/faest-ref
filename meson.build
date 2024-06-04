@@ -2,7 +2,7 @@ project('faest-ref', ['c', 'cpp'],
   version: '1.0.1',
   meson_version: '>=0.57',
   default_options: [
-    'c_std=c11',
+    'c_std=c99',
     'cpp_std=c++17',
     'warning_level=3',
     'b_lto=true',
@@ -16,7 +16,7 @@ conf_data = configuration_data()
 
 # compile flags and defines
 flags = []
-c_flags = ['-O2']
+c_flags = []
 cpp_flags = []
 defines = []
 
@@ -25,7 +25,6 @@ if cc.get_id() != 'msvc'
     '-Werror=implicit-function-declaration',
     '-Werror=vla',
     '-Werror=incompatible-pointer-types',
-    #'-O2',
   ]
   flags += '-Wshadow'
   defines += '-D_GNU_SOURCE'

@@ -39,45 +39,6 @@ int ChalDec(const uint8_t* chal, unsigned int i, unsigned int k0, unsigned int t
   return 1;
 }
 
-// NOTE - Assumes v is cleared (initially)!!
-static void ConstructVoleRMO(const uint8_t* iv, unsigned int start, unsigned int len,
-                             vec_com_t* vec_com, unsigned int lambda, unsigned int out_len_bytes,
-                             uint8_t* v, unsigned int offset) {
-  unsigned int depth               = vec_com->depth;
-  const unsigned int num_instances = 1 << depth;
-  const unsigned int lambda_bytes  = lambda / 8;
-
-  uint8_t* sd              = malloc(lambda_bytes);
-  uint8_t* com             = malloc(lambda_bytes * 2);
-  uint8_t* r               = malloc(out_len_bytes);
-  unsigned int bit_offset  = (offset % 8);
-  unsigned int byte_offset = (offset / 8);
-
-  for (unsigned int i = 0; i < num_instances; i++) {
-    extract_sd_com(vec_com, iv, lambda, i, sd, com);
-    prg(sd, iv, r, lambda, out_len_bytes);
-
-    for (unsigned int row_idx = 0; row_idx < len; row_idx++) {
-      unsigned int byte_idx = (row_idx + start) / 8;
-      unsigned int bit_idx  = (row_idx + start) % 8;
-      uint8_t bit           = (r[byte_idx] >> (bit_idx)) & 1;
-      if (bit == 0) {
-        continue;
-      }
-      unsigned int base_idx = row_idx * lambda_bytes + byte_offset;
-      unsigned int amount   = (bit_offset + depth + 7) / 8;
-      // Avoid carry by breaking into two steps
-      v[base_idx] ^= i << bit_offset;
-      for (unsigned int j = 1; j < amount; j++) {
-        v[base_idx + j] ^= i >> (j * 8 - bit_offset);
-      }
-    }
-  }
-  free(sd);
-  free(com);
-  free(r);
-}
-
 void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned int ellhat,
                              unsigned int start, unsigned int end,
                              sign_vole_mode_ctx_t vole_mode, const faest_paramset_t* params) {
@@ -92,7 +53,7 @@ void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
 
   uint8_t* expanded_keys = malloc(tau * lambda_bytes);
   prg(rootKey, iv, expanded_keys, lambda, lambda_bytes * tau);
-  uint8_t* path = malloc(lambda_bytes * max_depth);
+  uint8_t* path = malloc(lambda_bytes * max_depth * 2);
 
   H1_context_t hcom_ctx;
   H1_context_t com_ctx;
@@ -257,7 +218,6 @@ void partial_vole_commit_rmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
   free(path);
 }
 
-
 void partial_vole_reconstruct_cmo(const uint8_t* iv, const uint8_t* chall,
                                   const uint8_t* const* pdec, const uint8_t* const* com_j,
                                   unsigned int ellhat, unsigned int start, unsigned int len,
@@ -338,8 +298,8 @@ void partial_vole_reconstruct_cmo(const uint8_t* iv, const uint8_t* chall,
         }
         continue; // Skip the first seed
       }
-
       extract_sd_com_rec(&vec_com_rec, iv, lambda, i, sd, com);
+
 
       if (vole_mode.mode != EXCLUDE_HCOM) {
         H1_update(&com_ctx, com, lambda_bytes * 2);
@@ -444,7 +404,7 @@ void partial_vole_reconstruct_rmo(const uint8_t* iv, const uint8_t* chall,
   vec_com_rec.b       = malloc(max_depth * sizeof(uint8_t));
   vec_com_rec.nodes   = calloc(max_depth, lambda_bytes);
   vec_com_rec.com_j   = malloc(lambda_bytes * 2);
-  uint8_t* tree_nodes = malloc(lambda_bytes * (max_depth - 1));
+  uint8_t* tree_nodes = malloc(lambda_bytes * (max_depth - 1) * 2);
 
   memset(q, 0, len * lambda_bytes);
 
