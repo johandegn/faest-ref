@@ -1517,7 +1517,7 @@ static void aes_prove_256(const uint8_t* w, vbb_t* vbb, const uint8_t* in, const
 
   // Step: 16..18
   zk_hash_256_finalize(a_tilde, &a1_ctx, bf256_load(get_vole_u(vbb) + FAEST_256F_L / 8));
-  zk_hash_256_finalize(b_tilde, &a0_ctx, bf256_sum_poly_vbb(vbb, FAEST_256F_L, 0));
+  zk_hash_256_finalize(b_tilde, &a0_ctx, bf256_sum_poly_vbb(vbb, FAEST_256F_L));
 }
 
 static uint8_t* aes_verify_256(vbb_t* vbb, const uint8_t* chall_2, const uint8_t* chall_3,
@@ -1543,7 +1543,7 @@ static uint8_t* aes_verify_256(vbb_t* vbb, const uint8_t* chall_2, const uint8_t
 
   // Step: 20, 21
   uint8_t* q_tilde = malloc(FAEST_256F_LAMBDA / 8);
-  zk_hash_256_finalize(q_tilde, &b0_ctx, bf256_sum_poly_vbb(vbb, FAEST_256F_L, 0));
+  zk_hash_256_finalize(q_tilde, &b0_ctx, bf256_sum_poly_vbb(vbb, FAEST_256F_L));
 
   bf256_t bf_qtilde = bf256_load(q_tilde);
   bf256_store(q_tilde, bf256_add(bf_qtilde, bf256_mul(bf256_load(a_tilde), bf256_load(delta))));
@@ -2626,7 +2626,7 @@ static void em_prove_256(const uint8_t* w, vbb_t* vbb, const uint8_t* in, const 
   em_enc_constraints_Mkey_0_256(out, x, w, vbb, &a0_ctx, &a1_ctx);
 
   zk_hash_256_finalize(a_tilde, &a1_ctx, bf256_load(get_vole_u(vbb) + FAEST_EM_256F_Lenc / 8));
-  zk_hash_256_finalize(b_tilde, &a0_ctx, bf256_sum_poly_vbb(vbb, FAEST_EM_256F_Lenc, 0));
+  zk_hash_256_finalize(b_tilde, &a0_ctx, bf256_sum_poly_vbb(vbb, FAEST_EM_256F_Lenc));
 }
 
 static uint8_t* em_verify_256(vbb_t* vbb, const uint8_t* chall_2, const uint8_t* chall_3,
@@ -2652,7 +2652,7 @@ static uint8_t* em_verify_256(vbb_t* vbb, const uint8_t* chall_2, const uint8_t*
   em_enc_constraints_Mkey_1_256(out, x, vbb, delta, &b0_ctx);
 
   uint8_t* q_tilde = malloc(FAEST_EM_256F_LAMBDA / 8);
-  zk_hash_256_finalize(q_tilde, &b0_ctx, bf256_sum_poly_vbb(vbb, FAEST_EM_256F_Lenc, 0));
+  zk_hash_256_finalize(q_tilde, &b0_ctx, bf256_sum_poly_vbb(vbb, FAEST_EM_256F_Lenc));
 
   bf256_t bf_qtilde = bf256_load(q_tilde);
   bf256_store(q_tilde, bf256_add(bf_qtilde, bf256_mul(bf256_load(a_tilde), bf256_load(delta))));
