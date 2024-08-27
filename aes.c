@@ -705,10 +705,11 @@ void aes128_init_round_keys_masked(aes_round_keys_t* round_key_share, const uint
   expand_128key_masked(round_key_share, key, KEY_WORDS_128, AES_BLOCK_WORDS, ROUNDS_128);
 }
 
-uint8_t* init_round_0_key(uint8_t* w_share[2], uint8_t* w, uint8_t* w_out, const faest_paramset_t* params,
-                      const aes_round_keys_t round_keys_share[2]) {
-  const unsigned int S_ke       = params->faest_param.Ske;
-  const unsigned int lambda     = params->faest_param.lambda;
+uint8_t* init_round_0_key(uint8_t* w_share[2], uint8_t* w, uint8_t* w_out,
+                          const faest_paramset_t* params,
+                          const aes_round_keys_t round_keys_share[2]) {
+  const unsigned int S_ke   = params->faest_param.Ske;
+  const unsigned int lambda = params->faest_param.lambda;
   // Key schedule constraints only needed for normal AES, not EM variant.
   for (unsigned int i = 0; i != params->faest_param.Nwd; ++i) {
     memcpy(w_share[0] + (w - w_out), round_keys_share[0].round_keys[i / 4][i % 4],
@@ -734,7 +735,6 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key_share, const uint8_t* in_s
   const unsigned int lambda     = params->faest_param.lambda;
   const unsigned int l          = params->faest_param.l;
   const unsigned int L_ke       = params->faest_param.Lke;
-  const unsigned int S_ke       = params->faest_param.Ske;
   const unsigned int num_rounds = params->faest_param.R;
 
   // uint8_t* w           = malloc((l + 7) / 8);
@@ -767,8 +767,8 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key_share, const uint8_t* in_s
     break;
   }
 
-  // Reconstruct key if not running 128 variant
-  // All other variants are not masked yet!
+  // NOTE - Reconstruct key if not running 128 variant
+  // NOTE - All other variants are not masked yet!
   uint8_t* key;
   uint8_t* in;
   if (!L_ke || lambda != 128) {
@@ -783,9 +783,9 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key_share, const uint8_t* in_s
   }
   if (!L_ke) {
     // switch input and key for EM
-    const uint8_t* tmp = key;
-    key                = in;
-    in                 = tmp;
+    uint8_t* tmp = key;
+    key          = in;
+    in           = tmp;
   }
   aes_round_keys_t round_keys_share[2];
 
