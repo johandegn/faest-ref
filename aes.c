@@ -769,8 +769,8 @@ uint8_t* aes_extend_witness_masked(const uint8_t* key_share, const uint8_t* in_s
 
   // NOTE - Reconstruct key if not running 128 variant
   // NOTE - All other variants are not masked yet!
-  uint8_t* key;
-  uint8_t* in;
+  uint8_t* key = NULL;
+  uint8_t* in = NULL;
   if (!L_ke || lambda != 128) {
     key = alloca(MAX_LAMBDA_BYTES);
     for (int i = 0; i < MAX_LAMBDA_BYTES; i++) {
