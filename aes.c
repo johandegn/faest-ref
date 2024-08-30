@@ -564,32 +564,36 @@ void bf8_square_masked(bf8_t in_share[2], bf8_t out_share[2]) {
 void bf8_mul_masked(bf8_t a[2], bf8_t b[2], bf8_t out_share[2]) {
   bf8_t mask = 0;
   rand_mask(&mask, 1);
-  out_share[0] = bf8_add(bf8_mul(a[0], b[0]), bf8_add(bf8_mul(a[0], b[1]), mask));
-  out_share[1] = bf8_add(bf8_mul(a[1], b[0]), bf8_add(bf8_mul(a[1], b[1]), mask));
+  out_share[0] = bf8_add(bf8_mul(a[1], b[0]), bf8_add(mask, bf8_add(bf8_mul(a[0], b[1]), bf8_mul(a[0], b[0]))));
+  out_share[1] = bf8_add(bf8_mul(a[1], b[1]), mask);
+}
+
+void bf8_refresh(bf8_t share[2]) {
+  bf8_t mask = 0;
+  rand_mask(&mask, 1);
+  share[0] = bf8_add(share[0], mask);
+  share[1] = bf8_add(share[1], mask);
 }
 
 void bf8_inv_masked(bf8_t in_share[2], bf8_t out_share[2]) {
-  bf8_t t_2_share[2]   = {0, 0};
-  bf8_t t_3_share[2]   = {0, 0};
-  bf8_t t_5_share[2]   = {0, 0};
-  bf8_t t_7_share[2]   = {0, 0};
-  bf8_t t_14_share[2]  = {0, 0};
-  bf8_t t_28_share[2]  = {0, 0};
-  bf8_t t_56_share[2]  = {0, 0};
-  bf8_t t_63_share[2]  = {0, 0};
-  bf8_t t_126_share[2] = {0, 0};
-  bf8_t t_252_share[2] = {0, 0};
-  bf8_square_masked(in_share, t_2_share);
-  bf8_mul_masked(in_share, t_2_share, t_3_share);
-  bf8_mul_masked(t_3_share, t_2_share, t_5_share);
-  bf8_mul_masked(t_5_share, t_2_share, t_7_share);
-  bf8_square_masked(t_7_share, t_14_share);
-  bf8_square_masked(t_14_share, t_28_share);
-  bf8_square_masked(t_28_share, t_56_share);
-  bf8_mul_masked(t_56_share, t_7_share, t_63_share);
-  bf8_square_masked(t_63_share, t_126_share);
-  bf8_square_masked(t_126_share, t_252_share);
-  bf8_mul_masked(t_252_share, t_2_share, out_share);
+  bf8_t z_share[2] = {0, 0};
+  bf8_t y_share[2] = {0, 0};
+  bf8_t w_share[2] = {0, 0};
+  bf8_square_masked(in_share, z_share);
+  bf8_refresh(z_share);
+  bf8_mul_masked(in_share, z_share, y_share);
+  bf8_square_masked(y_share, w_share);
+  bf8_square_masked(w_share, w_share);
+  bf8_refresh(w_share);
+  bf8_t y1_share[2] = {0, 0};
+  bf8_mul_masked(w_share, y_share, y1_share);
+  bf8_square_masked(y1_share, y1_share);
+  bf8_square_masked(y1_share, y1_share);
+  bf8_square_masked(y1_share, y1_share);
+  bf8_square_masked(y1_share, y1_share);
+  bf8_t y2_share[2] = {0, 0};
+  bf8_mul_masked(w_share, y1_share, y2_share);
+  bf8_mul_masked(z_share, y2_share, out_share);
 }
 
 static void compute_sbox_masked(bf8_t in[2], bf8_t out[2]) {
