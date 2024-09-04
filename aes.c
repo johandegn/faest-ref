@@ -556,31 +556,13 @@ uint8_t* aes_extend_witness(const uint8_t* key, const uint8_t* in, const faest_p
 //  Masked implementation
 // #######################
 
-void bf8_square_masked(bf8_t in_share[2], bf8_t out_share[2]) {
-  out_share[0] = bf8_mul(in_share[0], in_share[0]);
-  out_share[1] = bf8_mul(in_share[1], in_share[1]);
-}
-
-void bf8_mul_masked(bf8_t a[2], bf8_t b[2], bf8_t out_share[2]) {
-  bf8_t mask = 0;
-  rand_mask(&mask, 1);
-  out_share[0] = bf8_add(bf8_mul(a[1], b[0]), bf8_add(mask, bf8_add(bf8_mul(a[0], b[1]), bf8_mul(a[0], b[0]))));
-  out_share[1] = bf8_add(bf8_mul(a[1], b[1]), mask);
-}
-
-void bf8_refresh(bf8_t share[2]) {
-  bf8_t mask = 0;
-  rand_mask(&mask, 1);
-  share[0] = bf8_add(share[0], mask);
-  share[1] = bf8_add(share[1], mask);
-}
-
 void bf8_inv_masked(bf8_t in_share[2], bf8_t out_share[2]) {
   bf8_t r = 0;
   rand_mask(&r, 1);
-  r |= 1; // Add 1 to mask to ensure not zero
+  // map 0 -> 1, and otherwize no change
+  r += (!__builtin_popcount(r));
   bf8_t x0r = bf8_mul(in_share[0], r);
-  bf8_t x1r = bf8_mul(in_share[1], r);
+  bf8_t x1r = bf8_mul(r, in_share[1]);
   bf8_t xr = bf8_add(x0r, x1r);
   bf8_t xr_inv = bf8_inv(xr);
   bf8_t r1 = 0;
@@ -588,7 +570,7 @@ void bf8_inv_masked(bf8_t in_share[2], bf8_t out_share[2]) {
   bf8_t y0 = bf8_add(xr_inv, r1);
   bf8_t y1 = r1;
   out_share[0] = bf8_mul(y0, r);
-  out_share[1] = bf8_mul(y1, r);
+  out_share[1] = bf8_mul(r, y1);
 }
 
 static void compute_sbox_masked(bf8_t in[2], bf8_t out[2]) {
