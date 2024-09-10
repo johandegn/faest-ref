@@ -32,25 +32,64 @@ bf8_t bf8_rand(void) {
   return ret;
 }
 
-bf8_t bf8_mul(bf8_t lhs, bf8_t rhs) {
-  bf8_t result = 0;
-  for (unsigned int idx = 0; idx < 7; ++idx) {
-    result ^= -((rhs >> idx) & 1) & lhs;
-    const uint8_t mask = -((lhs >> 7) & 1);
-    lhs                = (lhs << 1) ^ (mask & bf8_modulus);
+bf8_t bf8_reduce(uint8_t C[2]){
+  C[0] ^= C[1];
+  C[0] ^= C[1] << 1;
+  C[0] ^= C[1] << 3;
+  C[0] ^= C[1] << 4;
+  uint8_t tmp = 0;
+  tmp ^= C[1] >> 7;
+  tmp ^= C[1] >> 5;
+  tmp ^= C[1] >> 4;
+
+  C[0] ^= tmp;
+  C[0] ^= tmp << 1;
+  C[0] ^= tmp << 3;
+  C[0] ^= tmp << 4;
+
+  return C[0];
+}
+
+#define bf8_mul_w 4
+#define bf8_mul_u_amount (2 << (bf8_mul_w - 1))
+bf8_t bf8_mul(bf8_t a, bf8_t b){
+  //step 1
+  bf8_t B[bf8_mul_u_amount];
+  B[0] = 0;
+  B[1] = b;
+  for (unsigned int i = 0; i < bf8_mul_w - 1; i++) {
+    B[2 << i] = (B[1 << i] << 1) ^ (-(B[1 << i] >> 7) & bf8_modulus);
+    for (unsigned int j = 1; j < (2U << i); j++) {
+      B[(2 << i) + j] = B[2 << i] ^ B[j];
+    }
   }
-  return result ^ (-(rhs >> 7) & lhs);
+
+  // step 2
+  uint8_t C[2] = {0};
+
+  const unsigned int W      = 8;
+  const unsigned int u_mask = bf8_mul_u_amount - 1;
+
+  // step 3
+  for (int k = (W / bf8_mul_w) - 1; k >= 0; k--) {
+    // step 3.1
+    unsigned int u = (a >> (bf8_mul_w * k)) & u_mask;
+
+    // Add to C{j}
+    C[0] ^= B[u];
+
+    // step 3.2
+    if (k != 0) {
+      C[1] = (C[1] << bf8_mul_w) | (C[0] >> (W - bf8_mul_w));
+      C[0] = C[0] << bf8_mul_w;
+    }
+  }
+
+  return bf8_reduce(C);
 }
 
 static bf8_t bf8_square(bf8_t lhs) {
-  bf8_t result = 0;
-  bf8_t rhs = lhs;
-  for (unsigned int idx = 0; idx < 7; ++idx) {
-    result ^= -((rhs >> idx) & 1) & lhs;
-    const uint8_t mask = -((lhs >> 7) & 1);
-    lhs                = (lhs << 1) ^ (mask & bf8_modulus);
-  }
-  return result ^ (-(rhs >> 7) & lhs);
+  return bf8_mul(lhs, lhs);
 }
 
 bf8_t bf8_inv(bf8_t in) {
