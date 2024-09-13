@@ -113,8 +113,11 @@ void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
       prg(sd, iv, r, lambda, ellhat_bytes); // Seed expansion
 
       if (vole_mode.mode != EXCLUDE_U_HCOM_C) {
+        int factor_32 = ellhat_bytes / 4;
         H1_update(&com_ctx, com, lambda_bytes * 2);
-        xor_u8_array(u_ptr, r, u_ptr, ellhat_bytes);
+        xor_u32_array((uint32_t*)u_ptr, (uint32_t*)r, (uint32_t*)u_ptr, factor_32);
+        xor_u8_array(u_ptr + factor_32 * 4, r + factor_32 * 4, u_ptr + factor_32 * 4,
+                    ellhat_bytes - factor_32 * 4);
       }
       if (vole_mode.mode != EXCLUDE_V) {
         for (unsigned int j = v_start; j < v_end; j++) {
@@ -123,7 +126,10 @@ void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
           unsigned int t_v = j-v_progress; // That is; t provides depth num of v's where t_v reflects the current v \in [0, depth]
           // Apply r if the i/2^t_v is odd
           if ((i >> t_v) & 1) {
-            xor_u8_array(write_idx, r, write_idx, ellhat_bytes);
+            int factor_32 = ellhat_bytes / 4;
+            xor_u32_array((uint32_t*) write_idx, (uint32_t*)r, (uint32_t*) write_idx, factor_32);
+            xor_u8_array(write_idx + factor_32 * 4, r + factor_32 * 4, write_idx + factor_32 * 4,
+                        ellhat_bytes - factor_32 * 4);
           }
         }
       }
@@ -201,7 +207,7 @@ void partial_vole_commit_rmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
         unsigned int write_idx = (row_idx-start) * lambda_bytes + byte_offset;
         unsigned int amount   = (bit_offset + depth + 7) / 8;
         // Avoid carry by breaking into two steps
-          v[write_idx + 0] ^= i << bit_offset;
+        v[write_idx + 0] ^= i << bit_offset;
         for (unsigned int j = 1; j < amount; j++) {
           v[write_idx + j] ^= i >> (j * 8 - bit_offset);
         }
