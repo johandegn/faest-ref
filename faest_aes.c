@@ -225,7 +225,7 @@ static void aes_key_schedule_backward_128_vbb_vk(vbb_t* vbb, uint8_t Mtag, uint8
     // Step 7
     bf128_t bf_x_tilde[8];
     for (unsigned int i = 0; i < 8; i++) {
-      bf_x_tilde[i] = bf128_add(*get_vole_aes_128(vbb, (8 * j + i) + FAEST_128F_LAMBDA),
+      bf_x_tilde[i] = bf128_add(*get_vole_rmo_128(vbb, (8 * j + i) + FAEST_128F_LAMBDA),
                                 *get_vk_128(vbb, iwd + 8 * c + i));
     }
 
@@ -497,54 +497,34 @@ static void aes_enc_backward_128_vbb_linear_access(vbb_t* vbb, unsigned int offs
       bf128_mul_bit(bf128_add(bf128_mul_bit(bf_delta, Mkey), bf128_from_bit(1 ^ Mkey)), 1 ^ Mtag);
   // Access pattern friendly for OLEs
   bf128_t bf_x_tilde[8];
-  for (unsigned int i = 0; i < (FAEST_128F_R - 1) * 8 * 16; i++) {
-    unsigned int j = i / 128;
-    unsigned int r = ((i - (128 * j)) % 32) / 8;
-    unsigned int c = ((i - 128 * j - 8 * r) / 32 + r) % 4;
+  for (unsigned int ird = 0; ird < FAEST_128F_R*128; ird++) {
+    unsigned int j = ird / 128;
+    unsigned int r = ((ird - (128 * j)) % 32) / 8;
+    unsigned int c = ((ird - 128 * j - 8 * r) / 32 + r) % 4;
 
-    memcpy(bf_x_tilde + (i % 8), get_vole_aes_128(vbb, i + offset), sizeof(bf128_t));
+    if (j != FAEST_128F_R - 1) {
+      memcpy(bf_x_tilde + (ird % 8), get_vole_rmo_128(vbb, ird + offset), sizeof(bf128_t));
+    } else {
+      memset(bf_x_tilde, 0, sizeof(bf128_t));
+      unsigned int z = (ird/8)*8;
 
-    if (i % 8 == 7) {
-      bf128_t bf_y_tilde[8];
-      for (unsigned int k = 0; k < 8; ++k) {
-        bf_y_tilde[k] = bf128_add(bf128_add(bf_x_tilde[(k + 7) % 8], bf_x_tilde[(k + 5) % 8]),
-                                  bf_x_tilde[(k + 2) % 8]);
-      }
-      bf_y_tilde[0] = bf128_add(bf_y_tilde[0], factor);
-      bf_y_tilde[2] = bf128_add(bf_y_tilde[2], factor);
-
-      // Step: 18
-      y_out[16 * j + 4 * c + r] = bf128_byte_combine(bf_y_tilde);
-    }
-  }
-
-  unsigned int j = FAEST_128F_R - 1;
-  for (unsigned int c = 0; c <= 3; c++) {
-    for (unsigned int r = 0; r <= 3; r++) {
-      memset(bf_x_tilde, 0, sizeof(bf_x_tilde));
-      // Step: 5
-      unsigned int ird = (128 * j) + (32 * ((c - r + 4) % 4)) + (8 * r);
-
-      // Step: 10
       for (unsigned int i = 0; i < 8; ++i) {
-        // Step: 11
         bf128_t bf_xout =
-            bf128_mul_bit(factor, get_bit(out[(ird - 128 * (FAEST_128F_R - 1)) / 8], i));
-        // Step: 12
-        bf_x_tilde[i] = bf128_add(bf_xout, *get_vk_128(vbb, 128 + ird + i));
+            bf128_mul_bit(factor, get_bit(out[(z - 128*(FAEST_128F_R-1)) / 8], i));
+        bf_x_tilde[i] = bf128_add(bf_xout, *get_vk_128(vbb, 128+z + i));
       }
+    }
 
-      // Step: 13..17
-      bf128_t bf_y_tilde[8];
-      for (unsigned int i = 0; i < 8; ++i) {
-        bf_y_tilde[i] = bf128_add(bf128_add(bf_x_tilde[(i + 7) % 8], bf_x_tilde[(i + 5) % 8]),
-                                  bf_x_tilde[(i + 2) % 8]);
-      }
-      bf_y_tilde[0] = bf128_add(bf_y_tilde[0], factor);
-      bf_y_tilde[2] = bf128_add(bf_y_tilde[2], factor);
+    if (ird % 8 == 7) {
+        bf128_t bf_y_tilde[8];
+        for (unsigned int i = 0; i < 8; ++i) {
+          bf_y_tilde[i] = bf128_add(bf128_add(bf_x_tilde[(i + 7) % 8], bf_x_tilde[(i + 5) % 8]),
+                                    bf_x_tilde[(i + 2) % 8]);
+        }
+        bf_y_tilde[0] = bf128_add(bf_y_tilde[0], factor);
+        bf_y_tilde[2] = bf128_add(bf_y_tilde[2], factor);
 
-      // Step: 18
-      y_out[16 * j + 4 * c + r] = bf128_byte_combine(bf_y_tilde);
+        y_out[16 * j + 4 * c + r] = bf128_byte_combine(bf_y_tilde);
     }
   }
 }
@@ -675,7 +655,7 @@ static void aes_key_schedule_backward_192_vbb_vk(vbb_t* vbb, uint8_t Mtag, uint8
     // Step 7
     bf192_t bf_x_tilde[8];
     for (unsigned int i = 0; i < 8; i++) {
-      bf_x_tilde[i] = bf192_add(*get_vole_aes_192(vbb, (8 * j + i) + FAEST_192F_LAMBDA),
+      bf_x_tilde[i] = bf192_add(*get_vole_rmo_192(vbb, (8 * j + i) + FAEST_192F_LAMBDA),
                                 *get_vk_192(vbb, iwd + 8 * c + i));
     }
 
@@ -944,54 +924,34 @@ static void aes_enc_backward_192_vbb_linear_access(vbb_t* vbb, unsigned int offs
       bf192_mul_bit(bf192_add(bf192_mul_bit(bf_delta, Mkey), bf192_from_bit(1 ^ Mkey)), 1 ^ Mtag);
   // Access pattern friendly for OLEs
   bf192_t bf_x_tilde[8];
-  for (unsigned int i = 0; i < (FAEST_192F_R - 1) * 8 * 16; i++) {
-    unsigned int j = i / 128;
-    unsigned int r = ((i - (128 * j)) % 32) / 8;
-    unsigned int c = ((i - 128 * j - 8 * r) / 32 + r) % 4;
+  for (unsigned int ird = 0; ird < FAEST_192F_R*128; ird++) {
+    unsigned int j = ird / 128;
+    unsigned int r = ((ird - (128 * j)) % 32) / 8;
+    unsigned int c = ((ird - 128 * j - 8 * r) / 32 + r) % 4;
 
-    memcpy(bf_x_tilde + (i % 8), get_vole_aes_192(vbb, i + offset), sizeof(bf192_t));
+    if (j != FAEST_192F_R - 1) {
+      memcpy(bf_x_tilde + (ird % 8), get_vole_rmo_192(vbb, ird + offset), sizeof(bf192_t));
+    } else {
+      memset(bf_x_tilde, 0, sizeof(bf192_t));
+      unsigned int z = (ird/8)*8;
 
-    if (i % 8 == 7) {
-      bf192_t bf_y_tilde[8];
-      for (unsigned int k = 0; k < 8; ++k) {
-        bf_y_tilde[k] = bf192_add(bf192_add(bf_x_tilde[(k + 7) % 8], bf_x_tilde[(k + 5) % 8]),
-                                  bf_x_tilde[(k + 2) % 8]);
-      }
-      bf_y_tilde[0] = bf192_add(bf_y_tilde[0], factor);
-      bf_y_tilde[2] = bf192_add(bf_y_tilde[2], factor);
-
-      // Step: 18
-      y_out[16 * j + 4 * c + r] = bf192_byte_combine(bf_y_tilde);
-    }
-  }
-
-  unsigned int j = FAEST_192F_R - 1;
-  for (unsigned int c = 0; c <= 3; c++) {
-    for (unsigned int r = 0; r <= 3; r++) {
-      memset(bf_x_tilde, 0, sizeof(bf_x_tilde));
-      // Step: 5
-      unsigned int ird = (128 * j) + (32 * ((c - r + 4) % 4)) + (8 * r);
-
-      // Step: 10
       for (unsigned int i = 0; i < 8; ++i) {
-        // Step: 11
         bf192_t bf_xout =
-            bf192_mul_bit(factor, get_bit(out[(ird - 128 * (FAEST_192F_R - 1)) / 8], i));
-        // Step: 12
-        bf_x_tilde[i] = bf192_add(bf_xout, *get_vk_192(vbb, 128 + ird + i));
+            bf192_mul_bit(factor, get_bit(out[(z - 128*(FAEST_192F_R-1)) / 8], i));
+        bf_x_tilde[i] = bf192_add(bf_xout, *get_vk_192(vbb, 128+z + i));
       }
+    }
 
-      // Step: 13..17
-      bf192_t bf_y_tilde[8];
-      for (unsigned int i = 0; i < 8; ++i) {
-        bf_y_tilde[i] = bf192_add(bf192_add(bf_x_tilde[(i + 7) % 8], bf_x_tilde[(i + 5) % 8]),
-                                  bf_x_tilde[(i + 2) % 8]);
-      }
-      bf_y_tilde[0] = bf192_add(bf_y_tilde[0], factor);
-      bf_y_tilde[2] = bf192_add(bf_y_tilde[2], factor);
+    if (ird % 8 == 7) {
+        bf192_t bf_y_tilde[8];
+        for (unsigned int i = 0; i < 8; ++i) {
+          bf_y_tilde[i] = bf192_add(bf192_add(bf_x_tilde[(i + 7) % 8], bf_x_tilde[(i + 5) % 8]),
+                                    bf_x_tilde[(i + 2) % 8]);
+        }
+        bf_y_tilde[0] = bf192_add(bf_y_tilde[0], factor);
+        bf_y_tilde[2] = bf192_add(bf_y_tilde[2], factor);
 
-      // Step: 18
-      y_out[16 * j + 4 * c + r] = bf192_byte_combine(bf_y_tilde);
+        y_out[16 * j + 4 * c + r] = bf192_byte_combine(bf_y_tilde);
     }
   }
 }
@@ -1129,7 +1089,7 @@ static void aes_key_schedule_backward_256_vbb_vk(vbb_t* vbb, uint8_t Mtag, uint8
     // Step 7
     bf256_t bf_x_tilde[8];
     for (unsigned int i = 0; i < 8; i++) {
-      bf_x_tilde[i] = bf256_add(*get_vole_aes_256(vbb, (8 * j + i) + FAEST_256F_LAMBDA),
+      bf_x_tilde[i] = bf256_add(*get_vole_rmo_256(vbb, (8 * j + i) + FAEST_256F_LAMBDA),
                                 *get_vk_256(vbb, iwd + 8 * c + i)); // Vk[iwd + 8 * c + i]);
     }
 
@@ -1411,54 +1371,34 @@ static void aes_enc_backward_256_vbb_linear_access(vbb_t* vbb, unsigned int offs
       bf256_mul_bit(bf256_add(bf256_mul_bit(bf_delta, Mkey), bf256_from_bit(1 ^ Mkey)), 1 ^ Mtag);
   // Access pattern friendly for OLEs
   bf256_t bf_x_tilde[8];
-  for (unsigned int i = 0; i < (FAEST_256F_R - 1) * 8 * 16; i++) {
-    unsigned int j = i / 128;
-    unsigned int r = ((i - (128 * j)) % 32) / 8;
-    unsigned int c = ((i - 128 * j - 8 * r) / 32 + r) % 4;
+  for (unsigned int ird = 0; ird < FAEST_256F_R*128; ird++) {
+    unsigned int j = ird / 128;
+    unsigned int r = ((ird - (128 * j)) % 32) / 8;
+    unsigned int c = ((ird - 128 * j - 8 * r) / 32 + r) % 4;
 
-    memcpy(bf_x_tilde + (i % 8), get_vole_aes_256(vbb, i + offset), sizeof(bf256_t));
-
-    if (i % 8 == 7) {
-      bf256_t bf_y_tilde[8];
-      for (unsigned int k = 0; k < 8; ++k) {
-        bf_y_tilde[k] = bf256_add(bf256_add(bf_x_tilde[(k + 7) % 8], bf_x_tilde[(k + 5) % 8]),
-                                  bf_x_tilde[(k + 2) % 8]);
-      }
-      bf_y_tilde[0] = bf256_add(bf_y_tilde[0], factor);
-      bf_y_tilde[2] = bf256_add(bf_y_tilde[2], factor);
-
-      // Step: 18
-      y_out[16 * j + 4 * c + r] = bf256_byte_combine(bf_y_tilde);
-    }
-  }
-
-  unsigned int j = FAEST_256F_R - 1;
-  for (unsigned int c = 0; c <= 3; c++) {
-    for (unsigned int r = 0; r <= 3; r++) {
+    if (j != FAEST_256F_R - 1) {
+      memcpy(bf_x_tilde + (ird % 8), get_vole_rmo_256(vbb, ird + offset), sizeof(bf256_t));
+    } else {
       memset(bf_x_tilde, 0, sizeof(bf256_t));
-      // Step: 5
-      unsigned int ird = (128 * j) + (32 * ((c - r + 4) % 4)) + (8 * r);
+      unsigned int z = (ird/8)*8;
 
-      // Step: 10
       for (unsigned int i = 0; i < 8; ++i) {
-        // Step: 11
         bf256_t bf_xout =
-            bf256_mul_bit(factor, get_bit(out[(ird - 128 * (FAEST_256F_R - 1)) / 8], i));
-        // Step: 12
-        bf_x_tilde[i] = bf256_add(bf_xout, *get_vk_256(vbb, 128 + ird + i));
+            bf256_mul_bit(factor, get_bit(out[(z - 128*(FAEST_256F_R-1)) / 8], i));
+        bf_x_tilde[i] = bf256_add(bf_xout, *get_vk_256(vbb, 128+z + i));
       }
+    }
 
-      // Step: 13..17
-      bf256_t bf_y_tilde[8];
-      for (unsigned int i = 0; i < 8; ++i) {
-        bf_y_tilde[i] = bf256_add(bf256_add(bf_x_tilde[(i + 7) % 8], bf_x_tilde[(i + 5) % 8]),
-                                  bf_x_tilde[(i + 2) % 8]);
-      }
-      bf_y_tilde[0] = bf256_add(bf_y_tilde[0], factor);
-      bf_y_tilde[2] = bf256_add(bf_y_tilde[2], factor);
+    if (ird % 8 == 7) {
+        bf256_t bf_y_tilde[8];
+        for (unsigned int i = 0; i < 8; ++i) {
+          bf_y_tilde[i] = bf256_add(bf256_add(bf_x_tilde[(i + 7) % 8], bf_x_tilde[(i + 5) % 8]),
+                                    bf_x_tilde[(i + 2) % 8]);
+        }
+        bf_y_tilde[0] = bf256_add(bf_y_tilde[0], factor);
+        bf_y_tilde[2] = bf256_add(bf_y_tilde[2], factor);
 
-      // Step: 18
-      y_out[16 * j + 4 * c + r] = bf256_byte_combine(bf_y_tilde);
+        y_out[16 * j + 4 * c + r] = bf256_byte_combine(bf_y_tilde);
     }
   }
 }
@@ -1746,7 +1686,7 @@ static void em_enc_backward_128_linear_access_verify(vbb_t* vbb, const bf128_t* 
 
     bf128_t bf_z_tilde[8];
     for (unsigned int i = 0; i < 8; i++) {
-      memcpy(bf_z_tilde + i, get_vole_aes_128(vbb, chunk_idx + i), sizeof(bf128_t));
+      memcpy(bf_z_tilde + i, get_vole_rmo_128(vbb, chunk_idx + i), sizeof(bf128_t));
     }
 
     bf128_t bf_y_tilde[8];
@@ -1777,7 +1717,7 @@ static void em_enc_backward_128_vbb_linear_access(vbb_t* vbb, const bf128_t* bf_
 
     bf128_t bf_z_tilde[8];
     for (unsigned int i = 0; i < 8; ++i) {
-      bf_z_tilde[i] = *get_vole_aes_128(vbb_out, chunk_idx + i);
+      bf_z_tilde[i] = *get_vole_rmo_128(vbb_out, chunk_idx + i);
       if (bf_x) {
         bf_z_tilde[i] = bf128_add(bf_z_tilde[i], bf_x[ird + i]);
       }
@@ -1804,7 +1744,7 @@ static void em_enc_backward_128_vbb_linear_access(vbb_t* vbb, const bf128_t* bf_
 
     bf128_t bf_z_tilde[8];
     for (unsigned int i = 0; i < 8; i++) {
-      memcpy(bf_z_tilde + i, get_vole_aes_128(vbb, chunk_idx + i), sizeof(bf128_t));
+      memcpy(bf_z_tilde + i, get_vole_rmo_128(vbb, chunk_idx + i), sizeof(bf128_t));
     }
 
     bf128_t bf_y_tilde[8];
@@ -1860,7 +1800,7 @@ static void em_enc_constraints_Mkey_1_128(const uint8_t* out, const uint8_t* x, 
   bf128_t* bf_q_out = faest_aligned_alloc(BF128_ALIGN, sizeof(bf128_t) * FAEST_EM_128F_LAMBDA);
   for (unsigned int i = 0; i < FAEST_EM_128F_LAMBDA; i++) {
     bf_q_out[i] =
-        bf128_add(bf128_mul_bit(bf_delta, ptr_get_bit(out, i)), *get_vole_aes_128(vbb, i));
+        bf128_add(bf128_mul_bit(bf_delta, ptr_get_bit(out, i)), *get_vole_rmo_128(vbb, i));
   }
 
   bf128_t bf_qs[FAEST_EM_128F_Senc];
@@ -2110,7 +2050,7 @@ static void em_enc_backward_192_linear_access_verify(vbb_t* vbb, const bf192_t* 
 
     bf192_t bf_z_tilde[8];
     for (unsigned int i = 0; i < 8; i++) {
-      memcpy(bf_z_tilde + i, get_vole_aes_192(vbb, chunk_idx + i), sizeof(bf192_t));
+      memcpy(bf_z_tilde + i, get_vole_rmo_192(vbb, chunk_idx + i), sizeof(bf192_t));
     }
 
     bf192_t bf_y_tilde[8];
@@ -2141,7 +2081,7 @@ static void em_enc_backward_192_vbb_linear_access(vbb_t* vbb, const bf192_t* bf_
 
     bf192_t bf_z_tilde[8];
     for (unsigned int i = 0; i < 8; ++i) {
-      bf_z_tilde[i] = *get_vole_aes_192(vbb_out, chunk_idx + i);
+      bf_z_tilde[i] = *get_vole_rmo_192(vbb_out, chunk_idx + i);
       if (bf_x) {
         bf_z_tilde[i] = bf192_add(bf_z_tilde[i], bf_x[ird + i]);
       }
@@ -2168,7 +2108,7 @@ static void em_enc_backward_192_vbb_linear_access(vbb_t* vbb, const bf192_t* bf_
 
     bf192_t bf_z_tilde[8];
     for (unsigned int i = 0; i < 8; i++) {
-      memcpy(bf_z_tilde + i, get_vole_aes_192(vbb, chunk_idx + i), sizeof(bf192_t));
+      memcpy(bf_z_tilde + i, get_vole_rmo_192(vbb, chunk_idx + i), sizeof(bf192_t));
     }
 
     bf192_t bf_y_tilde[8];
@@ -2224,7 +2164,7 @@ static void em_enc_constraints_Mkey_1_192(const uint8_t* out, const uint8_t* x, 
   bf192_t* bf_q_out = faest_aligned_alloc(BF192_ALIGN, sizeof(bf192_t) * FAEST_EM_192F_LAMBDA);
   for (unsigned int i = 0; i < FAEST_EM_192F_LAMBDA; i++) {
     bf_q_out[i] =
-        bf192_add(bf192_mul_bit(bf_delta, ptr_get_bit(out, i)), *get_vole_aes_192(vbb, i));
+        bf192_add(bf192_mul_bit(bf_delta, ptr_get_bit(out, i)), *get_vole_rmo_192(vbb, i));
   }
 
   bf192_t bf_qs[FAEST_EM_192F_Senc];
@@ -2542,7 +2482,7 @@ static void em_enc_backward_256_linear_access_verify(vbb_t* vbb, const bf8_t* x,
 
     bf256_t bf_z_tilde[8];
     for (unsigned int i = 0; i < 8; i++) {
-      memcpy(bf_z_tilde + i, get_vole_aes_256(vbb, chunk_idx + i), sizeof(bf256_t));
+      memcpy(bf_z_tilde + i, get_vole_rmo_256(vbb, chunk_idx + i), sizeof(bf256_t));
     }
 
     bf256_t bf_y_tilde[8];
@@ -2577,7 +2517,7 @@ static void em_enc_backward_256_vbb_linear_access(vbb_t* vbb, const bf256_t* bf_
 
     bf256_t bf_z_tilde[8];
     for (unsigned int i = 0; i < 8; ++i) {
-      bf_z_tilde[i] = *get_vole_aes_256(vbb_out, chunk_idx + i);
+      bf_z_tilde[i] = *get_vole_rmo_256(vbb_out, chunk_idx + i);
       if (bf_x) {
         bf_z_tilde[i] = bf256_add(bf_z_tilde[i], bf_x[ird + i]);
       }
@@ -2608,7 +2548,7 @@ static void em_enc_backward_256_vbb_linear_access(vbb_t* vbb, const bf256_t* bf_
 
     bf256_t bf_z_tilde[8];
     for (unsigned int i = 0; i < 8; i++) {
-      memcpy(bf_z_tilde + i, get_vole_aes_256(vbb, chunk_idx + i), sizeof(bf256_t));
+      memcpy(bf_z_tilde + i, get_vole_rmo_256(vbb, chunk_idx + i), sizeof(bf256_t));
     }
 
     bf256_t bf_y_tilde[8];
@@ -2666,7 +2606,7 @@ static void em_enc_constraints_Mkey_1_256(const uint8_t* out, const uint8_t* x, 
   bf256_t* bf_q_out = faest_aligned_alloc(BF256_ALIGN, sizeof(bf256_t) * FAEST_EM_256F_LAMBDA);
   for (unsigned int i = 0; i < FAEST_EM_256F_LAMBDA; i++) {
     bf_q_out[i] =
-        bf256_add(bf256_mul_bit(bf_delta, ptr_get_bit(out, i)), *get_vole_aes_256(vbb, i));
+        bf256_add(bf256_mul_bit(bf_delta, ptr_get_bit(out, i)), *get_vole_rmo_256(vbb, i));
   }
 
   bf256_t bf_qs[FAEST_EM_256F_Senc];

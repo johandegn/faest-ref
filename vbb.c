@@ -43,7 +43,7 @@ static void recompute_hash_sign(vbb_t* vbb, unsigned int start, unsigned int end
   vbb->cache_idx = start;
 }
 
-static void recompute_aes_sign(vbb_t* vbb, unsigned int start, unsigned int len) {
+static void recompute_vole_rmo(vbb_t* vbb, unsigned int start, unsigned int len) {
   const unsigned int lambda = vbb->params->faest_param.lambda;
   const unsigned int ell    = vbb->params->faest_param.l;
 
@@ -106,7 +106,7 @@ void prepare_aes_sign(vbb_t* vbb) {
   if (vbb->full_size) {
     vbb->cache_idx = 0;
   } else {
-    recompute_aes_sign(vbb, 0, vbb->row_count);
+    recompute_vole_rmo(vbb, 0, vbb->row_count);
   }
   setup_vk_cache(vbb);
 }
@@ -303,7 +303,7 @@ static void apply_witness_values_cmo(vbb_t* vbb) {
   }
 }
 
-static void recompute_aes_verify(vbb_t* vbb, unsigned int start, unsigned int len) {
+static void recompute_vole_rmo_reconstruct(vbb_t* vbb, unsigned int start, unsigned int len) {
   const unsigned int lambda  = vbb->params->faest_param.lambda;
   const unsigned int ell     = vbb->params->faest_param.l;
   const unsigned int ell_hat = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
@@ -389,18 +389,18 @@ const uint8_t* get_dtilde(vbb_t* vbb, unsigned int idx) {
   const unsigned int k0           = vbb->params->faest_param.k0;
   const unsigned int k1           = vbb->params->faest_param.k1;
 
-  unsigned int i = 0;
+  unsigned int t = 0;
   unsigned int j = 0;
   if (idx < k0 * tau0) {
-    i = idx / k0;
+    t = idx / k0;
     j = idx % k0;
   } else {
-    i = tau0 + (idx - k0 * tau0) / k1;
+    t = tau0 + (idx - k0 * tau0) / k1;
     j = (idx - k0 * tau0) % k1;
   }
 
   uint8_t delta[MAX_DEPTH];
-  ChalDec(dsignature_chall_3(vbb->sig, vbb->params), i, k0, tau0, k1, tau1, delta);
+  ChalDec(dsignature_chall_3(vbb->sig, vbb->params), t, k0, tau0, k1, tau1, delta);
   memset(vbb->Dtilde_buf, 0, utilde_bytes);
   masked_xor_u8_array(vbb->Dtilde_buf, dsignature_u_tilde(vbb->sig, vbb->params), vbb->Dtilde_buf,
                       delta[j], utilde_bytes);
@@ -412,7 +412,7 @@ void prepare_aes_verify(vbb_t* vbb) {
     apply_witness_values_cmo(vbb);
     vbb->cache_idx = 0;
   } else {
-    recompute_aes_verify(vbb, 0, vbb->row_count);
+    recompute_vole_rmo_reconstruct(vbb, 0, vbb->row_count);
   }
   setup_vk_cache(vbb);
 }
@@ -448,8 +448,7 @@ const uint8_t* get_vole_q_hash(vbb_t* vbb, unsigned int idx) {
   return vbb->vole_cache + offset * ell_hat_bytes;
 }
 
-// Get voles for AES
-static inline uint8_t* get_vole_aes(vbb_t* vbb, unsigned int idx) {
+static inline uint8_t* get_vole_rmo(vbb_t* vbb, unsigned int idx) {
   unsigned int lambda       = vbb->params->faest_param.lambda;
   unsigned int lambda_bytes = lambda / 8;
   unsigned int ellhat       = vbb->params->faest_param.l + lambda * 2 + UNIVERSAL_HASH_B_BITS;
@@ -479,9 +478,9 @@ static inline uint8_t* get_vole_aes(vbb_t* vbb, unsigned int idx) {
   if (!is_row_cached(vbb, idx)) {
     unsigned int rmo_budget = vbb->row_count;
     if (vbb->party == VERIFIER) {
-      recompute_aes_verify(vbb, idx, rmo_budget);
+      recompute_vole_rmo_reconstruct(vbb, idx, rmo_budget);
     } else {
-      recompute_aes_sign(vbb, idx, rmo_budget);
+      recompute_vole_rmo(vbb, idx, rmo_budget);
     }
   }
 
@@ -489,16 +488,16 @@ static inline uint8_t* get_vole_aes(vbb_t* vbb, unsigned int idx) {
   return vbb->vole_cache + offset;
 }
 
-const bf256_t* get_vole_aes_256(vbb_t* vbb, unsigned int idx) {
-  return (bf256_t*)get_vole_aes(vbb, idx);
+const bf256_t* get_vole_rmo_256(vbb_t* vbb, unsigned int idx) {
+  return (bf256_t*)get_vole_rmo(vbb, idx);
 }
 
-const bf192_t* get_vole_aes_192(vbb_t* vbb, unsigned int idx) {
-  return (bf192_t*)get_vole_aes(vbb, idx);
+const bf192_t* get_vole_rmo_192(vbb_t* vbb, unsigned int idx) {
+  return (bf192_t*)get_vole_rmo(vbb, idx);
 }
 
-const bf128_t* get_vole_aes_128(vbb_t* vbb, unsigned int idx) {
-  return (bf128_t*)get_vole_aes(vbb, idx);
+const bf128_t* get_vole_rmo_128(vbb_t* vbb, unsigned int idx) {
+  return (bf128_t*)get_vole_rmo(vbb, idx);
 }
 
 const uint8_t* get_vole_u(vbb_t* vbb) {
@@ -544,7 +543,7 @@ static void setup_vk_cache(vbb_t* vbb) {
 
   for (unsigned int i = 0; i < vbb->params->faest_param.Lke; i++) {
     unsigned int offset = i * lambda_bytes;
-    memcpy(vbb->vk_cache + offset, get_vole_aes(vbb, i), lambda_bytes);
+    memcpy(vbb->vk_cache + offset, get_vole_rmo(vbb, i), lambda_bytes);
   }
 }
 
