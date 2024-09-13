@@ -44,7 +44,7 @@ void vector_open(vec_com_t* vec_com, const uint8_t* b, uint8_t* cop, uint8_t* co
                  const uint8_t* iv, uint32_t lambda) {
   // Step: 1
   const unsigned int lambda_bytes = lambda / 8;
-  uint8_t* children               = alloca(lambda_bytes * 2);
+  uint8_t* children               = malloc(lambda_bytes * 2);
   uint8_t* l_child                = children;
   uint8_t* r_child                = l_child + lambda_bytes;
   uint8_t* node                   = vec_com->rootKey;
@@ -67,7 +67,7 @@ void vector_open(vec_com_t* vec_com, const uint8_t* b, uint8_t* cop, uint8_t* co
 
   // Step: 7
   uint64_t leaf_index = NumRec(depth, b);
-  uint8_t* sd         = alloca(lambda_bytes); // Byproduct
+  uint8_t* sd         = malloc(lambda_bytes); // Byproduct
   extract_sd_com(vec_com, iv, lambda, leaf_index, sd, com_j);
 }
 
