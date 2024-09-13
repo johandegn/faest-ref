@@ -389,18 +389,18 @@ const uint8_t* get_dtilde(vbb_t* vbb, unsigned int idx) {
   const unsigned int k0           = vbb->params->faest_param.k0;
   const unsigned int k1           = vbb->params->faest_param.k1;
 
-  unsigned int i = 0;
+  unsigned int t = 0;
   unsigned int j = 0;
   if (idx < k0 * tau0) {
-    i = idx / k0;
+    t = idx / k0;
     j = idx % k0;
   } else {
-    i = tau0 + (idx - k0 * tau0) / k1;
+    t = tau0 + (idx - k0 * tau0) / k1;
     j = (idx - k0 * tau0) % k1;
   }
 
   uint8_t delta[MAX_DEPTH];
-  ChalDec(dsignature_chall_3(vbb->sig, vbb->params), i, k0, tau0, k1, tau1, delta);
+  ChalDec(dsignature_chall_3(vbb->sig, vbb->params), t, k0, tau0, k1, tau1, delta);
   memset(vbb->Dtilde_buf, 0, utilde_bytes);
   masked_xor_u8_array(vbb->Dtilde_buf, dsignature_u_tilde(vbb->sig, vbb->params), vbb->Dtilde_buf,
                       delta[j], utilde_bytes);
