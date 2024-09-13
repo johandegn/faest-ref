@@ -205,7 +205,7 @@ void partial_vole_commit_rmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
           continue;
         }
         unsigned int write_idx = (row_idx-start) * lambda_bytes + byte_offset;
-        unsigned int amount   = (bit_offset + depth + 7) / 8;
+        unsigned int amount    = (bit_offset + depth + 7) / 8;
         // Avoid carry by breaking into two steps
         v[write_idx + 0] ^= i << bit_offset;
         for (unsigned int j = 1; j < amount; j++) {
@@ -346,50 +346,6 @@ void partial_vole_reconstruct_cmo(const uint8_t* iv, const uint8_t* chall,
   }
 }
 
-static void ReconstructVoleRMO(const uint8_t* iv, vec_com_rec_t* vec_com_rec, unsigned int lambda,
-                               unsigned int out_len_bytes, uint8_t* q, unsigned int start,
-                               unsigned int len, unsigned int col_idx) {
-  unsigned int depth               = vec_com_rec->depth;
-  const unsigned int num_instances = 1 << depth;
-  const unsigned int lambda_bytes  = lambda / 8;
-
-  uint8_t* sd              = malloc(lambda_bytes);
-  uint8_t* com             = malloc(lambda_bytes * 2);
-  uint8_t* r               = malloc(out_len_bytes);
-  unsigned int bit_offset  = (col_idx % 8);
-  unsigned int byte_offset = (col_idx / 8);
-
-  unsigned int offset = NumRec(depth, vec_com_rec->b);
-
-  for (unsigned int i = 0; i < num_instances; i++) {
-    unsigned int offset_index = i ^ offset;
-    if (offset_index == 0) {
-      continue;
-    }
-    extract_sd_com_rec(vec_com_rec, iv, lambda, i, sd, com);
-    prg(sd, iv, r, lambda, out_len_bytes);
-
-    for (unsigned int row_idx = 0; row_idx < len; row_idx++) {
-      unsigned int byte_idx = (row_idx + start) / 8;
-      unsigned int bit_idx  = (row_idx + start) % 8;
-      uint8_t bit           = (r[byte_idx] >> (bit_idx)) & 1;
-      if (bit == 0) {
-        continue;
-      }
-      unsigned int base_idx = row_idx * lambda_bytes + byte_offset;
-      unsigned int amount   = (bit_offset + depth + 7) / 8;
-      // Avoid carry by breaking into two steps
-      q[base_idx] ^= offset_index << bit_offset;
-      for (unsigned int j = 1; j < amount; j++) {
-        q[base_idx + j] ^= offset_index >> (j * 8 - bit_offset);
-      }
-    }
-  }
-  free(sd);
-  free(com);
-  free(r);
-}
-
 void partial_vole_reconstruct_rmo(const uint8_t* iv, const uint8_t* chall,
                                   const uint8_t* const* pdec, const uint8_t* const* com_j,
                                   uint8_t* q, unsigned int ellhat, const faest_paramset_t* params,
@@ -403,6 +359,8 @@ void partial_vole_reconstruct_rmo(const uint8_t* iv, const uint8_t* chall,
   unsigned int k0           = params->faest_param.k0;
   unsigned int k1           = params->faest_param.k1;
 
+  unsigned int end = start + len;
+
   unsigned int max_depth = MAX(k0, k1);
   vec_com_rec_t vec_com_rec;
   vec_com_rec.b       = malloc(max_depth * sizeof(uint8_t));
@@ -410,18 +368,50 @@ void partial_vole_reconstruct_rmo(const uint8_t* iv, const uint8_t* chall,
   vec_com_rec.com_j   = malloc(lambda_bytes * 2);
   uint8_t* tree_nodes = malloc(lambda_bytes * (max_depth - 1) * 2);
 
+  uint8_t* sd              = malloc(lambda_bytes);
+  uint8_t* com             = malloc(lambda_bytes * 2);
+  uint8_t* r               = malloc(ellhat_bytes);
+
   memset(q, 0, len * lambda_bytes);
 
   unsigned int col_idx = 0;
-  for (unsigned int i = 0; i < tau; i++) {
-    unsigned int depth = i < tau0 ? k0 : k1;
+  for (unsigned int t = 0; t < tau; t++) {
+    unsigned int depth = t < tau0 ? k0 : k1;
     uint8_t chalout[MAX_DEPTH];
-    ChalDec(chall, i, k0, tau0, k1, tau1, chalout);
-    vector_reconstruction(pdec[i], com_j[i], chalout, lambda, depth, tree_nodes, &vec_com_rec);
-    ReconstructVoleRMO(iv, &vec_com_rec, lambda, ellhat_bytes, q, start, len, col_idx);
+    ChalDec(chall, t, k0, tau0, k1, tau1, chalout);
+    vector_reconstruction(pdec[t], com_j[t], chalout, lambda, depth, tree_nodes, &vec_com_rec);
+
+    unsigned int byte_offset = (col_idx / 8);
+    unsigned int bit_offset  = (col_idx % 8);
+
+    const unsigned int num_instances = 1 << depth;
+    for (unsigned int i = 0; i < num_instances; i++) {
+      extract_sd_com_rec(&vec_com_rec, iv, lambda, i, sd, com);
+      prg(sd, iv, r, lambda, ellhat_bytes);
+
+      for (unsigned int row_idx = start; row_idx < end; row_idx++) {
+        unsigned int byte_idx = row_idx / 8;
+        unsigned int bit_idx  = row_idx % 8;
+        uint8_t bit           = (r[byte_idx] >> (bit_idx)) & 1;
+        if (bit == 0) {
+          continue;
+        }
+        unsigned int write_idx = (row_idx-start) * lambda_bytes + byte_offset;
+        unsigned int amount    = (bit_offset + depth + 7) / 8;
+        // Avoid carry by breaking into two steps
+        q[write_idx + 0] ^= i << bit_offset;
+        for (unsigned int j = 1; j < amount; j++) {
+          q[write_idx + j] ^= i >> (j * 8 - bit_offset);
+        }
+      }
+    }
+    
     col_idx += depth;
   }
 
+  free(sd);
+  free(com);
+  free(r);
   free(vec_com_rec.b);
   free(vec_com_rec.nodes);
   free(vec_com_rec.com_j);
