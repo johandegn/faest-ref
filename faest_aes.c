@@ -1669,6 +1669,65 @@ static void em_enc_forward_128_vbb(vbb_t* vbb, const bf128_t* bf_x, bf128_t* bf_
   }
 }
 
+static bf128_t get_bf_x_128(const uint8_t* x, const uint8_t* delta,  unsigned int i) {
+  const bf128_t bf_delta = bf128_load(delta);
+  return bf128_mul_bit(bf_delta, ptr_get_bit(x, i));
+}
+
+static void em_enc_forward_128_vbb_verify(vbb_t* vbb, const bf8_t* x, const uint8_t* delta, bf128_t* bf_y) {
+  // Step: 2
+  for (unsigned int j = 0; j < 4 * FAEST_EM_128F_Nwd; j++) {
+    bf_y[j] = bf128_byte_combine_vbb(vbb, 8 * j);
+    bf128_t bf_x_arr[8];
+    for (unsigned int i = 0; i < 8; i++) {
+      bf_x_arr[i] = get_bf_x_128(x, delta, 8 * j + i);
+    }
+    bf_y[j] = bf128_add(bf_y[j], bf128_byte_combine(&bf_x_arr[0]));
+  }
+
+  const bf128_t bf_two   = bf128_byte_combine_bits(2);
+  const bf128_t bf_three = bf128_byte_combine_bits(3);
+
+  for (unsigned int j = 1; j < FAEST_EM_128F_R; j++) {
+    for (unsigned int c = 0; c < FAEST_EM_128F_Nwd; c++) {
+      const unsigned int i  = 32 * FAEST_EM_128F_Nwd * j + 32 * c;
+      const unsigned int iy = 4 * FAEST_EM_128F_Nwd * j + 4 * c;
+
+      bf128_t bf_x_hat[4];
+      bf128_t bf_z_hat[4];
+      for (unsigned int r = 0; r <= 3; r++) {
+        // Step: 12..13
+        bf_z_hat[r] = bf128_byte_combine_vbb(vbb, (i + 8 * r));
+        bf128_t bf_x_tmp[8];
+        for(int k = 0; k < 8; k++){
+          bf_x_tmp[k] = get_bf_x_128(x, delta, (i +8*r) + k);
+        }
+        bf_x_hat[r] = bf128_byte_combine(&bf_x_tmp[0]);
+      }
+
+      bf_y[iy + 0] = bf128_add(bf128_mul(bf_z_hat[0], bf_two), bf128_mul(bf_z_hat[1], bf_three));
+      bf_y[iy + 0] = bf128_add(bf_y[iy + 0], bf_z_hat[2]);
+      bf_y[iy + 0] = bf128_add(bf_y[iy + 0], bf_z_hat[3]);
+      bf_y[iy + 0] = bf128_add(bf_y[iy + 0], bf_x_hat[0]);
+
+      bf_y[iy + 1] = bf128_add(bf_z_hat[0], bf128_mul(bf_z_hat[1], bf_two));
+      bf_y[iy + 1] = bf128_add(bf_y[iy + 1], bf128_mul(bf_z_hat[2], bf_three));
+      bf_y[iy + 1] = bf128_add(bf_y[iy + 1], bf_z_hat[3]);
+      bf_y[iy + 1] = bf128_add(bf_y[iy + 1], bf_x_hat[1]);
+
+      bf_y[iy + 2] = bf128_add(bf_z_hat[0], bf_z_hat[1]);
+      bf_y[iy + 2] = bf128_add(bf_y[iy + 2], bf128_mul(bf_z_hat[2], bf_two));
+      bf_y[iy + 2] = bf128_add(bf_y[iy + 2], bf128_mul(bf_z_hat[3], bf_three));
+      bf_y[iy + 2] = bf128_add(bf_y[iy + 2], bf_x_hat[2]);
+
+      bf_y[iy + 3] = bf128_add(bf128_mul(bf_z_hat[0], bf_three), bf_z_hat[1]);
+      bf_y[iy + 3] = bf128_add(bf_y[iy + 3], bf_z_hat[2]);
+      bf_y[iy + 3] = bf128_add(bf_y[iy + 3], bf128_mul(bf_z_hat[3], bf_two));
+      bf_y[iy + 3] = bf128_add(bf_y[iy + 3], bf_x_hat[3]);
+    }
+  }
+}
+
 static void em_enc_backward_128_1(const uint8_t* z, const uint8_t* x, const uint8_t* z_out,
                                   bf128_t* y_out) {
   // only called with Mtag == Mkey == 0
@@ -1698,7 +1757,7 @@ static void em_enc_backward_128_1(const uint8_t* z, const uint8_t* x, const uint
   }
 }
 
-static void em_enc_backward_128_linear_access_verify(vbb_t* vbb, const bf128_t* bf_x,
+static void em_enc_backward_128_linear_access_verify(vbb_t* vbb, const bf8_t* x,
                                                      const bf128_t* bf_z_out, uint8_t Mtag,
                                                      uint8_t Mkey, const uint8_t* delta,
                                                      bf128_t* y_out) {
@@ -1718,9 +1777,7 @@ static void em_enc_backward_128_linear_access_verify(vbb_t* vbb, const bf128_t* 
       for (unsigned int i = 0; i < 8; ++i) {
         // Step: 12
         bf_z_tilde[i] = bf_z_out[ird - 32 * FAEST_EM_128F_Nwd * (j + 1) + i];
-        if (bf_x) {
-          bf_z_tilde[i] = bf128_add(bf_z_tilde[i], bf_x[ird + i]);
-        }
+        bf_z_tilde[i] = bf128_add(bf_z_tilde[i], get_bf_x_128(x, delta, ird + i));
       }
 
       bf128_t bf_y_tilde[8];
@@ -1851,10 +1908,12 @@ static void em_enc_constraints_Mkey_1_128(const uint8_t* out, const uint8_t* x, 
   // Step: 18, 19
   // TODO: compute these on demand in em_enc_backward_128
   const bf128_t bf_delta = bf128_load(delta);
+  /*
   bf128_t* bf_x = alloca(sizeof(bf128_t) * 128 * (FAEST_EM_128F_R + 1));
   for (unsigned int i = 0; i < 128 * (FAEST_EM_128F_R + 1); i++) {
     bf_x[i] = bf128_mul_bit(bf_delta, ptr_get_bit(x, i));
   }
+  */
 
   // Step 21
   bf128_t* bf_q_out = alloca(sizeof(bf128_t) * FAEST_EM_128F_LAMBDA);
@@ -1865,8 +1924,8 @@ static void em_enc_constraints_Mkey_1_128(const uint8_t* out, const uint8_t* x, 
 
   bf128_t bf_qs[FAEST_EM_128F_Senc];
   bf128_t bf_qs_dash[FAEST_EM_128F_Senc];
-  em_enc_forward_128_vbb(vbb, bf_x, bf_qs);
-  em_enc_backward_128_linear_access_verify(vbb, bf_x, bf_q_out, 0, 1, delta, bf_qs_dash);
+  em_enc_forward_128_vbb_verify(vbb, x, delta, bf_qs);
+  em_enc_backward_128_linear_access_verify(vbb, x, bf_q_out, 0, 1, delta, bf_qs_dash);
   //faest_aligned_free(bf_q_out);
   //faest_aligned_free(bf_x);
 
@@ -2034,6 +2093,65 @@ static void em_enc_forward_192_vbb(vbb_t* vbb, const bf192_t* bf_x, bf192_t* bf_
   }
 }
 
+static bf192_t get_bf_x_192(const uint8_t* x, const uint8_t* delta,  unsigned int i) {
+  const bf192_t bf_delta = bf192_load(delta);
+  return bf192_mul_bit(bf_delta, ptr_get_bit(x, i));
+}
+
+static void em_enc_forward_192_vbb_verify(vbb_t* vbb, const uint8_t* x, const uint8_t* delta, bf192_t* bf_y) {
+  // Step: 2
+  for (unsigned int j = 0; j < 4 * FAEST_EM_192F_Nwd; j++) {
+    bf_y[j] = bf192_byte_combine_vbb(vbb, 8 * j);
+    bf192_t bf_x_arr[8];
+    for(int i = 0; i < 8; i++){
+      bf_x_arr[i] = get_bf_x_192(x, delta, 8 * j + i);
+    }
+    bf_y[j] = bf192_add(bf_y[j], bf192_byte_combine(&bf_x_arr[0]));
+  }
+
+  const bf192_t bf_two   = bf192_byte_combine_bits(2);
+  const bf192_t bf_three = bf192_byte_combine_bits(3);
+
+  for (unsigned int j = 1; j < FAEST_EM_192F_R; j++) {
+    for (unsigned int c = 0; c < FAEST_EM_192F_Nwd; c++) {
+      const unsigned int i  = 32 * FAEST_EM_192F_Nwd * j + 32 * c;
+      const unsigned int iy = 4 * FAEST_EM_192F_Nwd * j + 4 * c;
+
+      bf192_t bf_x_hat[4];
+      bf192_t bf_z_hat[4];
+      for (unsigned int r = 0; r <= 3; r++) {
+        // Step: 12..13
+        bf_z_hat[r] = bf192_byte_combine_vbb(vbb, i + 8 * r);
+        bf192_t bf_x_tmp[8];
+        for(int k = 0; k < 8; k++){
+          bf_x_tmp[k] = get_bf_x_192(x, delta, (i + 8 * r) + k);
+        }
+        bf_x_hat[r] = bf192_byte_combine(&bf_x_tmp[0]);
+      }
+
+      bf_y[iy + 0] = bf192_add(bf192_mul(bf_z_hat[0], bf_two), bf192_mul(bf_z_hat[1], bf_three));
+      bf_y[iy + 0] = bf192_add(bf_y[iy + 0], bf_z_hat[2]);
+      bf_y[iy + 0] = bf192_add(bf_y[iy + 0], bf_z_hat[3]);
+      bf_y[iy + 0] = bf192_add(bf_y[iy + 0], bf_x_hat[0]);
+
+      bf_y[iy + 1] = bf192_add(bf_z_hat[0], bf192_mul(bf_z_hat[1], bf_two));
+      bf_y[iy + 1] = bf192_add(bf_y[iy + 1], bf192_mul(bf_z_hat[2], bf_three));
+      bf_y[iy + 1] = bf192_add(bf_y[iy + 1], bf_z_hat[3]);
+      bf_y[iy + 1] = bf192_add(bf_y[iy + 1], bf_x_hat[1]);
+
+      bf_y[iy + 2] = bf192_add(bf_z_hat[0], bf_z_hat[1]);
+      bf_y[iy + 2] = bf192_add(bf_y[iy + 2], bf192_mul(bf_z_hat[2], bf_two));
+      bf_y[iy + 2] = bf192_add(bf_y[iy + 2], bf192_mul(bf_z_hat[3], bf_three));
+      bf_y[iy + 2] = bf192_add(bf_y[iy + 2], bf_x_hat[2]);
+
+      bf_y[iy + 3] = bf192_add(bf192_mul(bf_z_hat[0], bf_three), bf_z_hat[1]);
+      bf_y[iy + 3] = bf192_add(bf_y[iy + 3], bf_z_hat[2]);
+      bf_y[iy + 3] = bf192_add(bf_y[iy + 3], bf192_mul(bf_z_hat[3], bf_two));
+      bf_y[iy + 3] = bf192_add(bf_y[iy + 3], bf_x_hat[3]);
+    }
+  }
+}
+
 static void em_enc_backward_192_1(const uint8_t* z, const uint8_t* x, const uint8_t* z_out,
                                   bf192_t* y_out) {
   // only called with Mtag == Mkey == 0
@@ -2062,7 +2180,7 @@ static void em_enc_backward_192_1(const uint8_t* z, const uint8_t* x, const uint
   }
 }
 
-static void em_enc_backward_192_linear_access_verify(vbb_t* vbb, const bf192_t* bf_x,
+static void em_enc_backward_192_linear_access_verify(vbb_t* vbb, const bf8_t* x,
                                                      const bf192_t* bf_z_out, uint8_t Mtag,
                                                      uint8_t Mkey, const uint8_t* delta,
                                                      bf192_t* y_out) {
@@ -2082,9 +2200,7 @@ static void em_enc_backward_192_linear_access_verify(vbb_t* vbb, const bf192_t* 
       for (unsigned int i = 0; i < 8; ++i) {
         // Step: 12
         bf_z_tilde[i] = bf_z_out[ird - 32 * FAEST_EM_192F_Nwd * (j + 1) + i];
-        if (bf_x) {
-          bf_z_tilde[i] = bf192_add(bf_z_tilde[i], bf_x[ird + i]);
-        }
+        bf_z_tilde[i] = bf192_add(bf_z_tilde[i], get_bf_x_192(x, delta, ird + i));
       }
 
       bf192_t bf_y_tilde[8];
@@ -2215,10 +2331,12 @@ static void em_enc_constraints_Mkey_1_192(const uint8_t* out, const uint8_t* x, 
   // Step: 18, 19
   // TODO: compute these on demand in em_enc_backward_192
   const bf192_t bf_delta = bf192_load(delta);
+  /*
   bf192_t* bf_x = alloca(sizeof(bf192_t) * 192 * (FAEST_EM_192F_R + 1));
   for (unsigned int i = 0; i < 192 * (FAEST_EM_192F_R + 1); i++) {
     bf_x[i] = bf192_mul_bit(bf_delta, ptr_get_bit(x, i));
   }
+  */
 
   // Step 21
   bf192_t* bf_q_out = alloca(sizeof(bf192_t) * FAEST_EM_192F_LAMBDA);
@@ -2229,8 +2347,8 @@ static void em_enc_constraints_Mkey_1_192(const uint8_t* out, const uint8_t* x, 
 
   bf192_t bf_qs[FAEST_EM_192F_Senc];
   bf192_t bf_qs_dash[FAEST_EM_192F_Senc];
-  em_enc_forward_192_vbb(vbb, bf_x, bf_qs);
-  em_enc_backward_192_linear_access_verify(vbb, bf_x, bf_q_out, 0, 1, delta, bf_qs_dash);
+  em_enc_forward_192_vbb_verify(vbb, x, delta, bf_qs);
+  em_enc_backward_192_linear_access_verify(vbb, x, bf_q_out, 0, 1, delta, bf_qs_dash);
   //faest_aligned_free(bf_q_out);
   //faest_aligned_free(bf_x);
 
