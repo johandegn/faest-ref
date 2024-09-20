@@ -738,9 +738,19 @@ uint8_t* init_round_0_key(uint8_t* w_share[2], uint8_t* w, uint8_t* w_out,
   return w;
 }
 
+void aes_encrypt_round_masked_inner(aes_block_t* state, unsigned int block_words,  aes_round_keys_t* round_key, uint8_t* w_share, uint8_t** w, uint8_t* w_out, unsigned int round) {
+  shift_row(state[0], block_words);
+  store_state(w_share + (*w - w_out), state[0], block_words);
+  mix_column(state[0], block_words);
+  add_round_key(round, state[0], round_key, block_words);
+}
+
 void aes_encrypt_round_masked(aes_block_t state_share[2], unsigned int block_words,  aes_round_keys_t round_keys_share[2], uint8_t* w_share[2], uint8_t** w, uint8_t* w_out, unsigned int round) {
   sub_bytes_masked(&state_share[0], &state_share[1], block_words);
 
+  aes_encrypt_round_masked_inner(&state_share[0], block_words, &round_keys_share[0], w_share[0], w, w_out, round);
+  aes_encrypt_round_masked_inner(&state_share[1], block_words, &round_keys_share[1], w_share[1], w, w_out, round);
+  /*
   shift_row(state_share[0], block_words);
   store_state(w_share[0] + (*w - w_out), state_share[0], block_words);
   mix_column(state_share[0], block_words);
@@ -750,6 +760,7 @@ void aes_encrypt_round_masked(aes_block_t state_share[2], unsigned int block_wor
   store_state(w_share[1] + (*w - w_out), state_share[1], block_words);
   mix_column(state_share[1], block_words);
   add_round_key(round, state_share[1], &round_keys_share[1], block_words);
+  */
   *w += sizeof(aes_word_t) * block_words;
 }
 
