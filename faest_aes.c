@@ -13,6 +13,7 @@
 #include "universal_hashing.h"
 #include "utils.h"
 #include "parameters.h"
+#include <stdio.h>
 
 #include <string.h>
 #include <stdlib.h>
@@ -310,6 +311,130 @@ static void aes_key_schedule_constraints_Mkey_0_128(const uint8_t* w, vbb_t* vbb
   }
 }
 
+static void aes_key_schedule_128(const uint8_t* w, vbb_t* vbb,
+                                                    zk_hash_128_ctx* a0_ctx,
+                                                    zk_hash_128_ctx* a1_ctx, uint8_t* k,
+                                                    const faest_paramset_t* params) {
+  uint8_t w_dash[4];
+  bf128_t v_w_dash[4 * 8];
+  
+  const unsigned int lambda      = params->faest_param.lambda;
+  const unsigned int R           = params->faest_param.R;
+  const unsigned int Nwd         = params->faest_param.Nwd;
+  const unsigned int lambdaBytes = lambda / 8;
+
+  const unsigned int out_len = (R + 1) * 128 / 8;
+  // Step 3
+  memcpy(k, w, lambdaBytes);
+  memset(k + lambdaBytes, 0, out_len - lambdaBytes);
+
+  // Step: 4
+  unsigned int i_wd = lambda;
+  // Step: 5..10
+  for (unsigned int j = Nwd; j < 4 * (R + 1); j++) {
+    if ((j % Nwd) == 0 || (Nwd > 6 && (j % Nwd) == 4)) {
+      memcpy(k + 32 * j / 8, w + i_wd / 8, 4);
+      i_wd += 32;
+    } else {
+      for (unsigned int i = 0; i < 32; i += 8) {
+        // bit spliced
+        k[(32 * j + i) / 8] |= k[(32 * (j - Nwd) + i) / 8] ^ k[(32 * (j - 1) + i) / 8];
+      }
+    }
+  }
+
+  const unsigned int Ske    = params->faest_param.Ske;
+
+  // backward 1
+  unsigned int iwd   = 0;
+  unsigned int c     = 0;
+  bool rmvRcon       = true;
+  unsigned int ircon = 0;
+
+  // backward 128
+  const bf128_t bf_delta = bf128_zero();
+  bf128_t bf_minus_mkey       = bf128_from_bit(1 ^ 0);
+  uint8_t minus_mtag          = 1 ^ 1;
+  bf128_t bf_mkey_times_delta = bf128_mul_bit(bf_delta, 0);
+  bf_mkey_times_delta         = bf128_add(bf_mkey_times_delta, bf_minus_mkey);
+
+  // hashing
+  /*
+  bf128_t bf_k_hat[4];
+  bf128_t bf_v_k_hat[4];
+  bf128_t bf_w_dash_hat[4];
+  bf128_t bf_v_w_dash_hat[4];
+  */
+
+  for (unsigned int j = 0; j < Ske; j++) {
+    // backward 1
+    uint8_t x_tilde = (w + FAEST_128F_LAMBDA / 8)[j] ^ k[iwd + c];
+
+    if (/* Mtag == 0 && */ rmvRcon == true && c == 0) {
+      x_tilde ^= Rcon[ircon];
+      ++ircon;
+    }
+
+    const uint8_t y_tilde = rotr8(x_tilde, 7) ^ rotr8(x_tilde, 5) ^ rotr8(x_tilde, 2);
+    w_dash[j%4] = y_tilde ^ 0x5;
+
+    // Backward 128
+    bf128_t bf_x_tilde[8];
+    for (unsigned int i = 0; i < 8; i++) {
+      bf_x_tilde[i] = bf128_add(*get_vole_aes_128(vbb, (8 * j + i) + FAEST_128F_LAMBDA),
+                                *get_vk_128(vbb, iwd*8 + 8 * c + i));
+    }
+
+    for (unsigned int i = 0; i < 8; ++i) {
+      v_w_dash[i + 8 * (j%4)] = bf128_add(bf128_add(bf_x_tilde[(i + 7) % 8], bf_x_tilde[(i + 5) % 8]),
+                                    bf_x_tilde[(i + 2) % 8]);
+    }
+    v_w_dash[0 + 8 * (j%4)] =
+        bf128_add(v_w_dash[0 + 8 * (j%4)], bf128_mul_bit(bf_mkey_times_delta, minus_mtag));
+    v_w_dash[2 + 8 * (j%4)] =
+        bf128_add(v_w_dash[2 + 8 * (j%4)], bf128_mul_bit(bf_mkey_times_delta, minus_mtag));
+
+
+    // hashing setup
+    /*
+    bf_k_hat[(c + 3) % 4]   = bf128_byte_combine_bits(k[(96 + iwd*8 + 8 * c) / 8]);
+    bf_v_k_hat[(c + 3) % 4] = bf128_byte_combine_vk(vbb, (96 + iwd*8 + 8 * c));
+    bf_w_dash_hat[c]        = bf128_byte_combine_bits(w_dash[(32 * j + 8 * c) / 8]);
+    bf_v_w_dash_hat[c]      = bf128_byte_combine(v_w_dash + (32 * j + 8 * c));
+    */
+
+    // Step: 20
+    ++c;
+    if (c == 4) {
+      /*
+      */
+      bf128_t bf_k_hat[4];
+      bf128_t bf_v_k_hat[4];
+      bf128_t bf_w_dash_hat[4];
+      bf128_t bf_v_w_dash_hat[4];
+
+      for (unsigned int r = 0; r <= 3; r++) {
+        // Step: 10..11
+        bf_k_hat[(r + 3) % 4]   = bf128_byte_combine_bits(k[(96 + iwd*8 + 8 * r) / 8]);
+        bf_v_k_hat[(r + 3) % 4] = bf128_byte_combine_vk(vbb, (96 + iwd*8 + 8 * r));
+        bf_w_dash_hat[r]        = bf128_byte_combine_bits(w_dash[(8 * r) / 8]);
+        bf_v_w_dash_hat[r]      = bf128_byte_combine(v_w_dash + (8 * r));
+      }
+      for (unsigned int r = 0; r <= 3; r++) {
+        const bf128_t tmp = bf128_mul(bf_v_k_hat[r], bf_v_w_dash_hat[r]);
+        zk_hash_128_update(a0_ctx, tmp);
+        zk_hash_128_update(
+            a1_ctx, bf128_add(bf128_add(bf128_mul(bf128_add(bf_k_hat[r], bf_v_k_hat[r]),
+                                                  bf128_add(bf_w_dash_hat[r], bf_v_w_dash_hat[r])),
+                                        bf128_one()),
+                              tmp));
+      }
+      c = 0;
+      iwd += 128 / 8;
+    }
+  }
+}
+
 static void aes_key_schedule_constraints_Mkey_1_128(vbb_t* vbb, const uint8_t* delta,
                                                     zk_hash_128_ctx* b0_ctx) {
   // Step: 19..20
@@ -580,11 +705,11 @@ static void aes_constraints_0_128(const uint8_t* in, const uint8_t* out, const u
                                            zk_hash_128_ctx* a0_ctx, zk_hash_128_ctx* a1_ctx) {
   unsigned int w_offset = offset / 8;
   w += w_offset;
-  // First round
   bf128_t vs_dash[FAEST_128F_Senc];
   aes_enc_backward_128_vbb_linear_access(vbb, offset, 1, 0, NULL, out, vs_dash);
 
 
+  // First round
   // forward 1
   bf128_t s[16];
   for (unsigned int i = 0; i < 16; i++) {
@@ -788,7 +913,7 @@ static void aes_prove_128(const uint8_t* w, vbb_t* vbb, const uint8_t* in, const
 
   zk_hash_128_init(&a0_ctx, chall);
   zk_hash_128_init(&a1_ctx, chall);
-  aes_key_schedule_constraints_Mkey_0_128(w, vbb, &a0_ctx, &a1_ctx, k, params);
+  aes_key_schedule_128(w, vbb, &a0_ctx, &a1_ctx, k, params);
 
   // Step: Skipping 8 in implementation
   // Step: 9
