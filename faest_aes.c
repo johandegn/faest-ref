@@ -381,8 +381,12 @@ static void aes_key_schedule_128(const uint8_t* w, vbb_t* vbb,
     // Backward 128
     bf128_t bf_x_tilde[8];
     for (unsigned int i = 0; i < 8; i++) {
-      bf_x_tilde[i] = bf128_add(*get_vole_aes_128(vbb, (8 * j + i) + FAEST_128F_LAMBDA),
-                                *get_vk_128(vbb, iwd*8 + 8 * c + i));
+      bf128_t VOLE = *get_vole_aes_128(vbb, (8 * j + i) + FAEST_128F_LAMBDA);
+      add_vole_to_vk_cache(vbb, (8 * j + i) + FAEST_128F_LAMBDA, &VOLE);
+      bf_x_tilde[i] = VOLE;
+    }
+    for(unsigned int i = 0; i < 8; i++){
+      bf_x_tilde[i] = bf128_add(bf_x_tilde[i], *get_vk_128(vbb, iwd*8 + 8 * c + i));
     }
 
     for (unsigned int i = 0; i < 8; ++i) {
@@ -717,14 +721,8 @@ static void aes_constraints_0_128(const uint8_t* in, const uint8_t* out, const u
   // forward vbb vk
   bf128_t vs[16];
   const bf128_t bf_delta  = NULL ? bf128_load(NULL) : bf128_zero();
-  const bf128_t bf_factor = bf128_add(bf128_mul_bit(bf_delta, 0), bf128_from_bit(1 ^ 0));
   for (unsigned int i = 0; i < 16; i++) {
-    bf128_t bf_xin[8];
-    for (unsigned int j = 0; j < 8; j++) {
-      bf_xin[j] = bf128_mul_bit(bf_factor, (1 ^ 1) & get_bit(in[i], j));
-    }
-    // Step: 5
-    vs[i] = bf128_add(bf128_byte_combine(bf_xin), bf128_byte_combine_vk(vbb, (8 * i)));
+    vs[i] = bf128_byte_combine_vk(vbb, (8 * i));
   }
 
   // backward 1
@@ -751,7 +749,6 @@ static void aes_constraints_0_128(const uint8_t* in, const uint8_t* out, const u
   bf128_t vs_old[16];
 
   bf128_t vs_dash_i[16];
-  bf128_t bf_x_tilde[8];
   const bf128_t factor =
       bf128_mul_bit(bf128_add(bf128_mul_bit(bf_delta, 0), bf128_from_bit(1 ^ 0)), 1 ^ 1);
 
@@ -766,12 +763,15 @@ static void aes_constraints_0_128(const uint8_t* in, const uint8_t* out, const u
     for (unsigned int r = 0; r <= 3; r++) {
       // Step: 12..13
 
-      bf128_t tmp_vole[8];
+      bf128_t bf_x_tilde[8];
       for (unsigned int i = 0; i < 8; i++){
         bf128_t t = *get_vole_aes_128(vbb, offset + ix + 8 * r + i);
-        memcpy(tmp_vole + i, &t, sizeof(bf128_t));
         memcpy(bf_x_tilde + i, &t, sizeof(bf128_t));
         i_counter++;
+
+      // forward part
+      bf_x_hat[r]  =  bf128_byte_combine(bf_x_tilde);
+      bf_xk_hat[r] = bf128_byte_combine_vk(vbb, (ik + 8 * r));
       }
       
       // backwards part
@@ -785,10 +785,6 @@ static void aes_constraints_0_128(const uint8_t* in, const uint8_t* out, const u
       bf_y_tilde[0] = bf128_add(bf_y_tilde[0], factor);
       bf_y_tilde[2] = bf128_add(bf_y_tilde[2], factor);
       vs_dash_i[4 * c_bkwd + r_bkwd] = bf128_byte_combine(bf_y_tilde);
-
-      // forward part
-      bf_x_hat[r]  =  bf128_byte_combine(tmp_vole);
-      bf_xk_hat[r] = bf128_byte_combine_vk(vbb, (ik + 8 * r));
     }
 
     // Step : 14
@@ -815,29 +811,6 @@ static void aes_constraints_0_128(const uint8_t* in, const uint8_t* out, const u
     vs_old[iy + 3] = bf128_add(vs_old[iy + 3], bf_x_hat[2]);
     vs_old[iy + 3] = bf128_add(vs_old[iy + 3], bf128_mul(bf_x_hat[3], bf_two));
   }
-
- 
-  /*
-  for (unsigned int i = 0; i < 16*8; i++){
-    unsigned int r = ((i) % 32) / 8;
-    unsigned int c = ((i - 8 * r) / 32 + r) % 4;
-
-    memcpy(bf_x_tilde + (i % 8), get_vole_aes_128(vbb, i + offset), sizeof(bf128_t));
-
-    if (i % 8 == 7) {
-      bf128_t bf_y_tilde[8];
-      for (unsigned int k = 0; k < 8; ++k) {
-        bf_y_tilde[k] = bf128_add(bf128_add(bf_x_tilde[(k + 7) % 8], bf_x_tilde[(k + 5) % 8]),
-                                  bf_x_tilde[(k + 2) % 8]);
-      }
-      bf_y_tilde[0] = bf128_add(bf_y_tilde[0], factor);
-      bf_y_tilde[2] = bf128_add(bf_y_tilde[2], factor);
-
-      // Step: 18
-      vs_dash_i[4 * c + r] = bf128_byte_combine(bf_y_tilde);
-    }
-  }
-  */
 
   for (unsigned int j = 0; j < 16; j++) {
     // instead of storing in A0, A!, hash it
@@ -927,14 +900,15 @@ static void aes_constraints_0_128(const uint8_t* in, const uint8_t* out, const u
         bf128_t bf_xk_hat[4];
         for (unsigned int r = 0; r <= 3; r++) {
           // Step: 12..13
-
-          bf128_t tmp_vole[8];
+          bf128_t bf_x_tilde[8];
           for (unsigned int i = 0; i < 8; i++){
             bf128_t t = *get_vole_aes_128(vbb, offset + ix + 8 * r + i);
-            memcpy(tmp_vole + i, &t, sizeof(bf128_t));
             memcpy(bf_x_tilde + i, &t, sizeof(bf128_t));
             i_counter++;
           }
+          // forward part
+          bf_x_hat[r]  =  bf128_byte_combine(bf_x_tilde);
+          bf_xk_hat[r] = bf128_byte_combine_vk(vbb, (ik + 8 * r));
           
           // backwards part
           unsigned int r_bkwd = ((i_counter-1) % 32) / 8;
@@ -948,9 +922,6 @@ static void aes_constraints_0_128(const uint8_t* in, const uint8_t* out, const u
           bf_y_tilde[2] = bf128_add(bf_y_tilde[2], factor);
           vs_dash_i[4 * c_bkwd + r_bkwd] = bf128_byte_combine(bf_y_tilde);
 
-          // forward part
-          bf_x_hat[r]  =  bf128_byte_combine(tmp_vole);
-          bf_xk_hat[r] = bf128_byte_combine_vk(vbb, (ik + 8 * r));
         }
 
         // Step : 14
@@ -983,8 +954,7 @@ static void aes_constraints_0_128(const uint8_t* in, const uint8_t* out, const u
     if (j == FAEST_128F_R -1){
       for (unsigned int c = 0; c <= 3; c++) {
         for (unsigned int r = 0; r <= 3; r++) {
-          memset(bf_x_tilde, 0, sizeof(bf_x_tilde));
-          // Step: 5
+          bf128_t bf_x_tilde[8];
           unsigned int ird = (128 * j) + (32 * ((c - r + 4) % 4)) + (8 * r);
 
           // Step: 10
