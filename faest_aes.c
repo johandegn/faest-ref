@@ -210,9 +210,18 @@ static void aes_key_schedule_backward_1_round(const uint8_t* x, const uint8_t* x
   unsigned int lambda = params->faest_param.lambda;
 
   // Step: 2
-  unsigned int iwd   = lambda/8 * j/4;
-  bool rmvRcon       = true;
+  unsigned int iwd;
+  if (lambda == 192){
+    iwd   = 192/8 * j/4;
+  } else {
+    iwd   = 128/8 * j/4;
+  }
+  bool rmvRcon = true;
   unsigned int ircon = j/4;
+  if (lambda == 256){
+    rmvRcon       = ((j/4) %2) == 0;
+    ircon = j/8;
+  }
 
   for (unsigned int c = 0; c < 4; c++) {
     // Step 7 (bit sliced)
@@ -1399,6 +1408,57 @@ static void aes_key_schedule_backward_256_vbb_vk(vbb_t* vbb, uint8_t Mtag, uint8
   }
 }
 
+static void aes_key_schedule_backward_256_vbb_vk_round(vbb_t* vbb, uint8_t Mtag, uint8_t Mkey,
+                                                 const uint8_t* delta, bf256_t* bf_out, unsigned int j) {
+  // Step: 1
+  assert(!((Mtag == 1 && Mkey == 1) || (Mkey == 1 && delta == NULL)));
+
+  unsigned int iwd   = 128 * j/4;
+  bool rmvRcon       = (j/4)%2 == 0;//true;
+  unsigned int ircon = j/8;
+
+  const bf256_t bf_delta      = delta ? bf256_load(delta) : bf256_zero();
+  const bf256_t bf_minus_mkey = bf256_from_bit(1 ^ Mkey);
+  const uint8_t minus_mtag    = 1 ^ Mtag;
+  bf256_t bf_mkey_times_delta = bf256_mul_bit(bf_delta, Mkey);
+  bf_mkey_times_delta         = bf256_add(bf_mkey_times_delta, bf_minus_mkey);
+
+  for(unsigned int c = 0; c < 4; c++) {
+    bf256_t bf_x_tilde[8];
+    for (unsigned int i = 0; i < 8; i++) {
+      bf256_t VOLE = *get_vole_aes_256(vbb, (8 * (j+c) + i) + FAEST_256F_LAMBDA);
+      add_vole_to_vk_cache_256(vbb, (8 * (j+c) + i) + FAEST_256F_LAMBDA, &VOLE);
+      bf_x_tilde[i] = VOLE;
+    }
+    for(unsigned int i = 0; i < 8; i++){
+      bf_x_tilde[i] = bf256_add(bf_x_tilde[i], *get_vk_256(vbb, iwd + 8 * c + i));
+    }
+
+    if (Mtag == 0 && rmvRcon == true && c == 0) {
+      // Step 9
+      uint8_t r = Rcon[ircon];
+      ircon     = ircon + 1;
+
+      bf256_t bf_r[8];
+      for (unsigned int i = 0; i < 8; i++) {
+        // Step 12
+        bf_r[i] = bf256_mul_bit(bf_mkey_times_delta, get_bit(r, i));
+        // Step 13
+        bf_x_tilde[i] = bf256_add(bf_x_tilde[i], bf_r[i]);
+      }
+    }
+
+    for (unsigned int i = 0; i < 8; ++i) {
+      bf_out[i + 8 * c] = bf256_add(bf256_add(bf_x_tilde[(i + 7) % 8], bf_x_tilde[(i + 5) % 8]),
+                                    bf_x_tilde[(i + 2) % 8]);
+    }
+    bf_out[0 + 8 * c] =
+        bf256_add(bf_out[0 + 8 * c], bf256_mul_bit(bf_mkey_times_delta, minus_mtag));
+    bf_out[2 + 8 * c] =
+        bf256_add(bf_out[2 + 8 * c], bf256_mul_bit(bf_mkey_times_delta, minus_mtag));
+  }
+}
+
 static void aes_key_schedule_constraints_Mkey_0_256(const uint8_t* w, vbb_t* vbb,
                                                     zk_hash_256_ctx* a0_ctx,
                                                     zk_hash_256_ctx* a1_ctx, uint8_t* k,
@@ -1457,6 +1517,54 @@ static void aes_key_schedule_constraints_Mkey_0_256(const uint8_t* w, vbb_t* vbb
   }
 }
 
+static void aes_key_schedule_256(const uint8_t* w, vbb_t* vbb,
+                                                    zk_hash_256_ctx* a0_ctx,
+                                                    zk_hash_256_ctx* a1_ctx, uint8_t* k,
+                                                    const faest_paramset_t* params) {
+  aes_key_schedule_forward_1(w, k, params);
+  uint8_t w_dash[4];
+  bf256_t v_w_dash[4 * 8];
+
+  // Step: 6..8
+  bool rotate_word = true;
+  unsigned int iwd = 32 * (FAEST_256F_Nwd - 1);
+  for (unsigned int j = 0; j < FAEST_256F_Ske; j += 4) {
+    aes_key_schedule_backward_1_round(w + FAEST_256F_LAMBDA / 8, k, w_dash, j, params);
+    aes_key_schedule_backward_256_vbb_vk_round(vbb, 1, 0, NULL, v_w_dash, j);
+    
+    bf256_t bf_k_hat[4];
+    bf256_t bf_v_k_hat[4];
+    bf256_t bf_w_dash_hat[4];
+    bf256_t bf_v_w_dash_hat[4];
+    for (unsigned int r = 0; r <= 3; r++) {
+      // Step: 10..11
+      if (rotate_word) {
+        bf_k_hat[(r + 3) % 4]   = bf256_byte_combine_bits(k[(iwd + 8 * r) / 8]);
+        bf_v_k_hat[(r + 3) % 4] = bf256_byte_combine_vk(vbb, (iwd + 8 * r));
+        bf_w_dash_hat[r]        = bf256_byte_combine_bits(w_dash[(8 * r) / 8]);
+        bf_v_w_dash_hat[r]      = bf256_byte_combine(v_w_dash + (8 * r));
+      } else {
+        bf_k_hat[r]        = bf256_byte_combine_bits(k[(iwd + 8 * r) / 8]);
+        bf_v_k_hat[r]      = bf256_byte_combine_vk(vbb, (iwd + 8 * r));
+        bf_w_dash_hat[r]   = bf256_byte_combine_bits(w_dash[(8 * r) / 8]);
+        bf_v_w_dash_hat[r] = bf256_byte_combine(v_w_dash + (8 * r));
+      }
+    }
+    // Step: 13..17
+    for (unsigned int r = 0; r <= 3; r++) {
+      const bf256_t tmp = bf256_mul(bf_v_k_hat[r], bf_v_w_dash_hat[r]);
+      zk_hash_256_update(a0_ctx, tmp);
+      zk_hash_256_update(
+          a1_ctx, bf256_add(bf256_add(bf256_mul(bf256_add(bf_k_hat[r], bf_v_k_hat[r]),
+                                                bf256_add(bf_w_dash_hat[r], bf_v_w_dash_hat[r])),
+                                      bf256_one()),
+                            tmp));
+    }
+    iwd         = iwd + 128;
+    rotate_word = !rotate_word;
+  }
+}
+
 static void aes_key_schedule_constraints_Mkey_1_256(vbb_t* vbb, const uint8_t* delta,
                                                     zk_hash_256_ctx* b0_ctx) {
   // Step: 19..20
@@ -1493,6 +1601,42 @@ static void aes_key_schedule_constraints_Mkey_1_256(vbb_t* vbb, const uint8_t* d
   }
 }
 
+static void aes_key_schedule_constraints_Mkey_1_256_new(vbb_t* vbb, const uint8_t* delta,
+                                                    zk_hash_256_ctx* b0_ctx) {
+  // Step: 19..20
+  // aes_key_schedule_forward_256_vbb(vbb, qk);
+  bf256_t q_w_dash[4 * 8];
+
+  const bf256_t bf_delta         = bf256_load(delta);
+  const bf256_t bf_delta_squared = bf256_mul(bf_delta, bf_delta);
+  bool rotate_word               = true;
+
+  // Step 23..24
+  unsigned int iwd = 32 * (FAEST_256F_Nwd - 1);
+  for (unsigned int j = 0; j < FAEST_256F_Ske; j += 4) {
+    aes_key_schedule_backward_256_vbb_vk_round(vbb, 0, 1, delta, q_w_dash, j);
+    bf256_t bf_q_hat_k[4];
+    bf256_t bf_q_hat_w_dash[4];
+    for (unsigned int r = 0; r <= 3; r++) {
+      // Step: 25..26
+      if (rotate_word) {
+        bf_q_hat_k[(r + 3) % 4] = bf256_byte_combine_vk(vbb, ((iwd + 8 * r)));
+        bf_q_hat_w_dash[r]      = bf256_byte_combine(q_w_dash + ((8 * r)));
+      } else {
+        bf_q_hat_k[r]      = bf256_byte_combine_vk(vbb, ((iwd + 8 * r)));
+        bf_q_hat_w_dash[r] = bf256_byte_combine(q_w_dash + ((8 * r)));
+      }
+    }
+    // Step: 27
+    for (unsigned int r = 0; r <= 3; r++) {
+      bf256_t bf_tmp = bf256_mul(bf_q_hat_k[r], bf_q_hat_w_dash[r]);
+      zk_hash_256_update(b0_ctx, bf256_add(bf_tmp, bf_delta_squared));
+    }
+    iwd         = iwd + 128;
+    rotate_word = !rotate_word;
+  }
+}
+
 static void aes_enc_forward_256_1(const uint8_t* x, const uint8_t* xk, const uint8_t* in,
                                   uint8_t Mtag, uint8_t Mkey, bf256_t* bf_y) {
   // Step: 2
@@ -1511,6 +1655,60 @@ static void aes_enc_forward_256_1(const uint8_t* x, const uint8_t* xk, const uin
       const unsigned int ix = 128 * (j - 1) + 32 * c;
       const unsigned int ik = 128 * j + 32 * c;
       const unsigned int iy = 16 * j + 4 * c;
+
+      bf256_t bf_x_hat[4];
+      bf256_t bf_xk_hat[4];
+      for (unsigned int r = 0; r <= 3; r++) {
+        // Step: 12..13
+        bf_x_hat[r]  = bf256_byte_combine_bits(x[(ix + 8 * r) / 8]);
+        bf_xk_hat[r] = bf256_byte_combine_bits(xk[(ik + 8 * r) / 8]);
+      }
+
+      // Step : 14
+      bf_y[iy + 0] = bf256_add(bf_xk_hat[0], bf256_mul(bf_x_hat[0], bf_two));
+      bf_y[iy + 0] = bf256_add(bf_y[iy + 0], bf256_mul(bf_x_hat[1], bf_three));
+      bf_y[iy + 0] = bf256_add(bf_y[iy + 0], bf_x_hat[2]);
+      bf_y[iy + 0] = bf256_add(bf_y[iy + 0], bf_x_hat[3]);
+
+      // Step: 15
+      bf_y[iy + 1] = bf256_add(bf_xk_hat[1], bf_x_hat[0]);
+      bf_y[iy + 1] = bf256_add(bf_y[iy + 1], bf256_mul(bf_x_hat[1], bf_two));
+      bf_y[iy + 1] = bf256_add(bf_y[iy + 1], bf256_mul(bf_x_hat[2], bf_three));
+      bf_y[iy + 1] = bf256_add(bf_y[iy + 1], bf_x_hat[3]);
+
+      // Step: 16
+      bf_y[iy + 2] = bf256_add(bf_xk_hat[2], bf_x_hat[0]);
+      bf_y[iy + 2] = bf256_add(bf_y[iy + 2], bf_x_hat[1]);
+      bf_y[iy + 2] = bf256_add(bf_y[iy + 2], bf256_mul(bf_x_hat[2], bf_two));
+      bf_y[iy + 2] = bf256_add(bf_y[iy + 2], bf256_mul(bf_x_hat[3], bf_three));
+
+      // Step: 17
+      bf_y[iy + 3] = bf256_add(bf_xk_hat[3], bf256_mul(bf_x_hat[0], bf_three));
+      bf_y[iy + 3] = bf256_add(bf_y[iy + 3], bf_x_hat[1]);
+      bf_y[iy + 3] = bf256_add(bf_y[iy + 3], bf_x_hat[2]);
+      bf_y[iy + 3] = bf256_add(bf_y[iy + 3], bf256_mul(bf_x_hat[3], bf_two));
+    }
+  }
+}
+
+static void aes_enc_forward_256_1_round(const uint8_t* x, const uint8_t* xk, const uint8_t* in,
+                                  uint8_t Mtag, uint8_t Mkey, bf256_t* bf_y, unsigned int round) {
+  // Step: 2
+  if(round == 0){
+    for (unsigned int i = 0; i < 16; i++) {
+      // Step: 3,4 (bit spliced)
+      const uint8_t xin = in[i] & -((1 ^ Mtag) & (1 ^ Mkey));
+      // Step: 5
+      bf_y[i] = bf256_add(bf256_byte_combine_bits(xin), bf256_byte_combine_bits(xk[i]));
+    }
+  } else {
+    const bf256_t bf_two   = bf256_byte_combine_bits(2);
+    const bf256_t bf_three = bf256_byte_combine_bits(3);
+    unsigned int j = round;
+    for (unsigned int c = 0; c <= 3; c++) {
+      const unsigned int ix = 128 * (j - 1) + 32 * c;
+      const unsigned int ik = 128 * j + 32 * c;
+      const unsigned int iy = 4 * c;
 
       bf256_t bf_x_hat[4];
       bf256_t bf_xk_hat[4];
@@ -1637,6 +1835,35 @@ static void aes_enc_backward_256_1(const uint8_t* x, const uint8_t* xk, uint8_t 
   }
 }
 
+static void aes_enc_backward_256_1_round(const uint8_t* x, const uint8_t* xk, uint8_t Mtag, uint8_t Mkey,
+                                   const uint8_t* out, bf256_t* y_out, unsigned int round) {
+  uint8_t xtilde;
+  // Step:2..4
+  unsigned int j = round;
+  for (unsigned int c = 0; c <= 3; c++) {
+    for (unsigned int r = 0; r <= 3; r++) {
+      // Step: 5..6
+      unsigned int ird = (128 * j) + (32 * ((c - r + 4) % 4)) + (8 * r);
+      if (j < (FAEST_256F_R - 1)) {
+        // Step: 7
+        xtilde = x[ird / 8];
+      } else {
+        // Step: 9..11 (bit spliced)
+        uint8_t xout = out[(ird - 128 * (FAEST_256F_R - 1)) / 8] & -((1 ^ Mtag) & (1 ^ Mkey));
+        xtilde       = xout ^ xk[(128 + ird) / 8];
+      }
+
+      // Step: 12..17 (bit spliced)
+      uint8_t ytilde = rotr8(xtilde, 7) ^ rotr8(xtilde, 5) ^ rotr8(xtilde, 2);
+      ytilde ^= set_bit((1 ^ Mtag) & (1 ^ Mkey), 0);
+      ytilde ^= set_bit((1 ^ Mtag) & (1 ^ Mkey), 2);
+
+      // Step: 18
+      y_out[4 * c + r] = bf256_byte_combine_bits(ytilde);
+    }
+  }
+}
+
 static void aes_enc_backward_256_vbb_linear_access(vbb_t* vbb, unsigned int offset, uint8_t Mtag,
                                                    uint8_t Mkey, const uint8_t* delta,
                                                    const uint8_t* out, bf256_t* y_out) {
@@ -1697,27 +1924,150 @@ static void aes_enc_backward_256_vbb_linear_access(vbb_t* vbb, unsigned int offs
   }
 }
 
+static void aes_enc_forward_backward_256(vbb_t* vbb, unsigned int offset, const uint8_t* in, const uint8_t* out,
+                                         uint8_t Mtag, uint8_t Mkey, const uint8_t* delta,
+                                         bf256_t* vs, bf256_t* vs_old, bf256_t* vs_dash, unsigned int round) {
+  const bf256_t bf_delta  = delta ? bf256_load(delta) : bf256_zero();
+  const bf256_t bf_factor = bf256_add(bf256_mul_bit(bf_delta, Mkey), bf256_from_bit(1 ^ Mkey));
+  const bf256_t factor =
+      bf256_mul_bit(bf256_add(bf256_mul_bit(bf_delta, Mkey), bf256_from_bit(1 ^ Mkey)), 1 ^ Mtag);
+
+  if (round == FAEST_256F_R -1){
+    for (unsigned int c = 0; c <= 3; c++) {
+        for (unsigned int r = 0; r <= 3; r++) {
+          bf256_t bf_x_tilde[8];
+          unsigned int ird = (128 * round) + (32 * ((c - r + 4) % 4)) + (8 * r);
+
+          // Step: 10
+          for (unsigned int i = 0; i < 8; ++i) {
+            // Step: 11
+            bf256_t bf_xout =
+                bf256_mul_bit(factor, get_bit(out[(ird - 128 * (FAEST_256F_R - 1)) / 8], i));
+            // Step: 12
+            bf_x_tilde[i] = bf256_add(bf_xout, *get_vk_256(vbb, 128 + ird + i));
+          }
+
+          // Step: 13..17
+          bf256_t bf_y_tilde[8];
+          for (unsigned int i = 0; i < 8; ++i) {
+            bf_y_tilde[i] = bf256_add(bf256_add(bf_x_tilde[(i + 7) % 8], bf_x_tilde[(i + 5) % 8]),
+                                      bf_x_tilde[(i + 2) % 8]);
+          }
+          bf_y_tilde[0] = bf256_add(bf_y_tilde[0], factor);
+          bf_y_tilde[2] = bf256_add(bf_y_tilde[2], factor);
+
+          // Step: 18
+          vs_dash[4 * c + r] = bf256_byte_combine(bf_y_tilde);
+        }
+      }
+    return;
+  }
+
+  if (round == 0){
+    // Step: 2..4
+    for (unsigned int i = 0; i < 16; i++) {
+      bf256_t bf_xin[8];
+      for (unsigned int j = 0; j < 8; j++) {
+        bf_xin[j] = bf256_mul_bit(bf_factor, (1 ^ Mtag) & get_bit(in[i], j));
+      }
+      // Step: 5
+      vs[i] = bf256_add(bf256_byte_combine(bf_xin), bf256_byte_combine_vk(vbb, (8 * i)));
+    }
+  }
+
+  const bf256_t bf_two   = bf256_byte_combine_bits(2);
+  const bf256_t bf_three = bf256_byte_combine_bits(3);
+
+  unsigned int i_counter = 0;
+  unsigned int j = round;
+  for (unsigned int c = 0; c <= 3; c++) {
+    const unsigned int ix = 128 * (j) + 32 * c;
+    const unsigned int ik = 128 * (j+1) + 32 * c;
+    const unsigned int iy = 4 * c;
+
+    bf256_t bf_x_hat[4];
+    bf256_t bf_xk_hat[4];
+    for (unsigned int r = 0; r <= 3; r++) {
+      bf256_t bf_x_tilde[8];
+      for (unsigned int i = 0; i < 8; i++){
+        bf256_t t = *get_vole_aes_256(vbb, offset + ix + 8 * r + i);
+        memcpy(bf_x_tilde + i, &t, sizeof(bf256_t));
+        i_counter++;
+
+        // forward part
+        bf_x_hat[r]  =  bf256_byte_combine(bf_x_tilde);
+        bf_xk_hat[r] = bf256_byte_combine_vk(vbb, (ik + 8 * r));
+      }
+
+        // backwards part
+      unsigned int r_bkwd = ((i_counter-1) % 32) / 8;
+      unsigned int c_bkwd = ((i_counter-1 - 8 * r_bkwd) / 32 + r_bkwd) % 4;
+      bf256_t bf_y_tilde[8];
+      for (unsigned int k = 0; k < 8; ++k) {
+        bf_y_tilde[k] = bf256_add(bf256_add(bf_x_tilde[(k + 7) % 8], bf_x_tilde[(k + 5) % 8]),
+                                  bf_x_tilde[(k + 2) % 8]);
+      }
+      bf_y_tilde[0] = bf256_add(bf_y_tilde[0], factor);
+      bf_y_tilde[2] = bf256_add(bf_y_tilde[2], factor);
+      vs_dash[4 * c_bkwd + r_bkwd] = bf256_byte_combine(bf_y_tilde);
+    }
+
+    // Step : 14
+    vs_old[iy + 0] = bf256_add(bf_xk_hat[0], bf256_mul(bf_x_hat[0], bf_two));
+    vs_old[iy + 0] = bf256_add(vs_old[iy + 0], bf256_mul(bf_x_hat[1], bf_three));
+    vs_old[iy + 0] = bf256_add(vs_old[iy + 0], bf_x_hat[2]);
+    vs_old[iy + 0] = bf256_add(vs_old[iy + 0], bf_x_hat[3]);
+
+    // Step: 15
+    vs_old[iy + 1] = bf256_add(bf_xk_hat[1], bf_x_hat[0]);
+    vs_old[iy + 1] = bf256_add(vs_old[iy + 1], bf256_mul(bf_x_hat[1], bf_two));
+    vs_old[iy + 1] = bf256_add(vs_old[iy + 1], bf256_mul(bf_x_hat[2], bf_three));
+    vs_old[iy + 1] = bf256_add(vs_old[iy + 1], bf_x_hat[3]);
+
+    // Step: 16
+    vs_old[iy + 2] = bf256_add(bf_xk_hat[2], bf_x_hat[0]);
+    vs_old[iy + 2] = bf256_add(vs_old[iy + 2], bf_x_hat[1]);
+    vs_old[iy + 2] = bf256_add(vs_old[iy + 2], bf256_mul(bf_x_hat[2], bf_two));
+    vs_old[iy + 2] = bf256_add(vs_old[iy + 2], bf256_mul(bf_x_hat[3], bf_three));
+
+    // Step: 17
+    vs_old[iy + 3] = bf256_add(bf_xk_hat[3], bf256_mul(bf_x_hat[0], bf_three));
+    vs_old[iy + 3] = bf256_add(vs_old[iy + 3], bf_x_hat[1]);
+    vs_old[iy + 3] = bf256_add(vs_old[iy + 3], bf_x_hat[2]);
+    vs_old[iy + 3] = bf256_add(vs_old[iy + 3], bf256_mul(bf_x_hat[3], bf_two));
+  }
+}
+
 static void aes_enc_constraints_Mkey_0_256(const uint8_t* in, const uint8_t* out, const uint8_t* w,
                                            vbb_t* vbb, unsigned int offset, const uint8_t* k,
                                            zk_hash_256_ctx* a0_ctx, zk_hash_256_ctx* a1_ctx) {
   unsigned int w_offset = offset / 8;
   w += w_offset;
-  bf256_t s[FAEST_256F_Senc];
-  bf256_t vs[FAEST_256F_Senc];
-  bf256_t s_dash[FAEST_256F_Senc];
-  bf256_t vs_dash[FAEST_256F_Senc];
-  aes_enc_forward_256_1(w, k, in, 0, 0, s);
-  aes_enc_forward_256_vbb_vk(vbb, offset, in, 1, 0, NULL, vs);
-  aes_enc_backward_256_1(w, k, 0, 0, out, s_dash);
-  aes_enc_backward_256_vbb_linear_access(vbb, offset, 1, 0, NULL, out, vs_dash);
+  bf256_t s[16];
+  bf256_t s_dash[16];
+  bf256_t vs[16];
+  bf256_t vs_old[16];
+  bf256_t vs_dash[16];
+  for (unsigned int i = 0; i < FAEST_256F_R; i++){
+    aes_enc_forward_256_1_round(w, k, in, 0, 0, s, i);
+    aes_enc_backward_256_1_round(w, k, 0, 0, out, s_dash, i);
 
-  for (unsigned int j = 0; j < FAEST_256F_Senc; j++) {
-    const bf256_t tmp = bf256_mul(vs[j], vs_dash[j]);
-    zk_hash_256_update(a0_ctx, tmp);
-    zk_hash_256_update(a1_ctx, bf256_add(bf256_add(bf256_mul(bf256_add(s[j], vs[j]),
-                                                             bf256_add(s_dash[j], vs_dash[j])),
-                                                   tmp),
-                                         bf256_one()));
+    if (i != 0){
+      memcpy(vs, vs_old, sizeof(vs));
+    }
+    /*
+    aes_enc_forward_256_vbb_vk(vbb, offset, in, 1, 0, NULL, vs);
+    aes_enc_backward_256_vbb_linear_access(vbb, offset, 1, 0, NULL, out, vs_dash);
+    */
+    aes_enc_forward_backward_256(vbb, offset, in, out, 1, 0, NULL, vs, vs_old, vs_dash, i);
+    for (unsigned int j = 0; j < 16; j++) {
+      const bf256_t tmp = bf256_mul(vs[j], vs_dash[j]);
+      zk_hash_256_update(a0_ctx, tmp);
+      zk_hash_256_update(a1_ctx, bf256_add(bf256_add(bf256_mul(bf256_add(s[j], vs[j]),
+                                                              bf256_add(s_dash[j], vs_dash[j])),
+                                                    tmp),
+                                          bf256_one()));
+    }
   }
 }
 
@@ -1725,15 +2075,21 @@ static void aes_enc_constraints_Mkey_1_256(const uint8_t* in, const uint8_t* out
                                            unsigned int offset, const uint8_t* delta,
                                            zk_hash_256_ctx* b0_ctx) {
   // Step: 11..12
-  bf256_t qs[FAEST_256F_Senc];
-  bf256_t qs_dash[FAEST_256F_Senc];
-  aes_enc_forward_256_vbb_vk(vbb, offset, in, 0, 1, delta, qs);
-  aes_enc_backward_256_vbb_linear_access(vbb, offset, 0, 1, delta, out, qs_dash);
+  bf256_t qs[16];
+  bf256_t qs_old[16];
+  bf256_t qs_dash[16];
 
   // Step: 13..14
-  bf256_t minus_part = bf256_mul(bf256_load(delta), bf256_load(delta));
-  for (unsigned int j = 0; j < FAEST_256F_Senc; j++) {
-    zk_hash_256_update(b0_ctx, bf256_add(bf256_mul(qs[j], qs_dash[j]), minus_part));
+  for (unsigned int j = 0; j < FAEST_256F_R; j++) {
+    if(j != 0){
+      memcpy(qs, qs_old, sizeof(qs));
+    }
+    aes_enc_forward_backward_256(vbb, offset, in, out, 0, 1, delta, qs, qs_old, qs_dash, j);
+
+    bf256_t minus_part = bf256_mul(bf256_load(delta), bf256_load(delta));
+    for (unsigned int i = 0; i < 16; i++){
+      zk_hash_256_update(b0_ctx, bf256_add(bf256_mul(qs[i], qs_dash[i]), minus_part));
+    }
   }
 }
 
@@ -1755,7 +2111,7 @@ static void aes_prove_256(const uint8_t* w, vbb_t* vbb, const uint8_t* in, const
 
   zk_hash_256_init(&a0_ctx, chall);
   zk_hash_256_init(&a1_ctx, chall);
-  aes_key_schedule_constraints_Mkey_0_256(w, vbb, &a0_ctx, &a1_ctx, k, params);
+  aes_key_schedule_256(w, vbb, &a0_ctx, &a1_ctx, k, params);
 
   // Step: Skipping 8 in implementation
   // Step: 9
@@ -1786,7 +2142,7 @@ static uint8_t* aes_verify_256(vbb_t* vbb, const uint8_t* chall_2, const uint8_t
   zk_hash_256_ctx b0_ctx;
 
   zk_hash_256_init(&b0_ctx, chall_2);
-  aes_key_schedule_constraints_Mkey_1_256(vbb, delta, &b0_ctx);
+  aes_key_schedule_constraints_Mkey_1_256_new(vbb, delta, &b0_ctx);
 
   // Step: 14
   aes_enc_constraints_Mkey_1_256(in, out, vbb, FAEST_256F_Lke, delta, &b0_ctx);
