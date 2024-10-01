@@ -463,9 +463,9 @@ static void aes_enc_forward_backward_128(vbb_t* vbb, unsigned int offset, const 
         i_counter++;
 
         // forward part
-        bf_x_hat[r]  =  bf128_byte_combine(bf_x_tilde);
-        bf_xk_hat[r] = bf128_byte_combine_vk(vbb, (ik + 8 * r));
       }
+      bf_x_hat[r]  =  bf128_byte_combine(bf_x_tilde);
+      bf_xk_hat[r] = bf128_byte_combine_vk(vbb, (ik + 8 * r));
 
         // backwards part
       unsigned int r_bkwd = ((i_counter-1) % 32) / 8;
@@ -937,9 +937,9 @@ static void aes_enc_forward_backward_192(vbb_t* vbb, unsigned int offset, const 
         i_counter++;
 
         // forward part
-        bf_x_hat[r]  =  bf192_byte_combine(bf_x_tilde);
-        bf_xk_hat[r] = bf192_byte_combine_vk(vbb, (ik + 8 * r));
       }
+      bf_x_hat[r]  =  bf192_byte_combine(bf_x_tilde);
+      bf_xk_hat[r] = bf192_byte_combine_vk(vbb, (ik + 8 * r));
 
         // backwards part
       unsigned int r_bkwd = ((i_counter-1) % 32) / 8;
@@ -1389,9 +1389,9 @@ static void aes_enc_forward_backward_256(vbb_t* vbb, unsigned int offset, const 
         i_counter++;
 
         // forward part
-        bf_x_hat[r]  =  bf256_byte_combine(bf_x_tilde);
-        bf_xk_hat[r] = bf256_byte_combine_vk(vbb, (ik + 8 * r));
       }
+      bf_x_hat[r]  =  bf256_byte_combine(bf_x_tilde);
+      bf_xk_hat[r] = bf256_byte_combine_vk(vbb, (ik + 8 * r));
 
         // backwards part
       unsigned int r_bkwd = ((i_counter-1) % 32) / 8;
