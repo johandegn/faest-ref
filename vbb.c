@@ -519,6 +519,12 @@ void add_vole_to_vk_cache(vbb_t* vbb, unsigned int idx, bf128_t* vole){
   memcpy(vbb->vk_cache + offset, vole, lambda_bytes);
 }
 
+void add_vole_to_vk_cache_192(vbb_t* vbb, unsigned int idx, bf192_t* vole){
+  unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
+  unsigned int offset = idx * lambda_bytes;
+  memcpy(vbb->vk_cache + offset, vole, lambda_bytes);
+}
+
 static void setup_vk_cache(vbb_t* vbb) {
   unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
   if (is_em_variant(vbb->params->faest_paramid)) {

@@ -72,5 +72,6 @@ const bf192_t* get_vk_192(vbb_t* vbb, unsigned int idx);
 const bf256_t* get_vk_256(vbb_t* vbb, unsigned int idx);
 
 void add_vole_to_vk_cache(vbb_t* vbb, unsigned int idx, bf128_t* vole);
+void add_vole_to_vk_cache_192(vbb_t* vbb, unsigned int idx, bf192_t* vole);
 
 #endif
