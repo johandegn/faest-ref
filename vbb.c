@@ -12,7 +12,7 @@
 #include "fields.h"
 #include "parameters.h"
 
-#define ACCESS_PATTERN_TEST 0
+#define ACCESS_PATTERN_TEST 1
 
 static void setup_vk_cache(vbb_t* vbb);
 
@@ -536,16 +536,9 @@ static void setup_vk_cache(vbb_t* vbb) {
   if (is_em_variant(vbb->params->faest_paramid)) {
     return;
   }
-  if (vbb->params->faest_param.lambda == 128) {
-    for (unsigned int i = 0; i < 128; i++) {
-      unsigned int offset = i * lambda_bytes;
-      memcpy(vbb->vk_cache + offset, get_vole_aes(vbb, i), lambda_bytes);
-    }
-  }else{
-    for (unsigned int i = 0; i < vbb->params->faest_param.Lke; i++) {
-      unsigned int offset = i * lambda_bytes;
-      memcpy(vbb->vk_cache + offset, get_vole_aes(vbb, i), lambda_bytes);
-    }
+    for (unsigned int i = 0; i < vbb->params->faest_param.lambda; i++) {
+    unsigned int offset = i * lambda_bytes;
+    memcpy(vbb->vk_cache + offset, get_vole_aes(vbb, i), lambda_bytes);
   }
 }
 
