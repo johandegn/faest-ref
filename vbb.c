@@ -515,11 +515,18 @@ const uint8_t* get_com_hash(vbb_t* vbb) {
 // V_k cache
 
 static void setup_vk_cache(vbb_t* vbb) {
-  unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
+  unsigned int lambda = vbb->params->faest_param.lambda ;
+  unsigned int lambda_bytes = lambda / 8;
   if (is_em_variant(vbb->params->faest_paramid)) {
     return;
   }
 
+  if (lambda == 128 && vbb->party == SIGNER){
+    for (unsigned int i = 0; i < lambda; i++) {
+      memcpy(vbb->vk_cache + i * lambda_bytes, get_vole_aes(vbb, i), lambda_bytes);
+    }
+    return; 
+  }
   for (unsigned int i = 0; i < vbb->params->faest_param.Lke; i++) {
     unsigned int offset = i * lambda_bytes;
     memcpy(vbb->vk_cache + offset, get_vole_aes(vbb, i), lambda_bytes);
