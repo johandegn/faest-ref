@@ -344,6 +344,8 @@ static void aes_key_schedule_constraints_Mkey_0_128_masked(const uint8_t* w_shar
   
   for(int i = 0; i < (params->faest_param.R + 1) * 128 / 8; i++){
     k[i] = k_share[0][i];
+  }
+  for(int i = 0; i < (params->faest_param.R + 1) * 128 / 8; i++){
     k[i + (FAEST_128F_R + 1) * 128 / 8] = k_share[1][i];
   }
 
@@ -370,36 +372,36 @@ static void aes_key_schedule_constraints_Mkey_0_128_masked(const uint8_t* w_shar
     for (unsigned int r = 0; r <= 3; r++) {
       // Step: 10..11
       bf_k_hat_share[0][(r + 3) % 4]   = bf128_byte_combine_bits(k_share[0][(iwd + 8 * r) / 8]);
-      bf_k_hat_share[1][(r + 3) % 4]   = bf128_byte_combine_bits(k_share[1][(iwd + 8 * r) / 8]);
       bf_v_k_hat_share[0][(r + 3) % 4] = bf128_byte_combine_vk_share(vbb, (iwd + 8 * r), 0);
-      bf_v_k_hat_share[1][(r + 3) % 4] = bf128_byte_combine_vk_share(vbb, (iwd + 8 * r), 1);
       bf_w_dash_hat_share[0][r]        = bf128_byte_combine_bits(w_dash_share[0][(32 * j + 8 * r) / 8]);
-      bf_w_dash_hat_share[1][r]        = bf128_byte_combine_bits(w_dash_share[1][(32 * j + 8 * r) / 8]);
       bf_v_w_dash_hat_share[0][r]      = bf128_byte_combine(v_w_dash_share[0] + (32 * j + 8 * r));
+    }
+    for (unsigned int r = 0; r <= 3; r++) {
+      bf_k_hat_share[1][(r + 3) % 4]   = bf128_byte_combine_bits(k_share[1][(iwd + 8 * r) / 8]);
+      bf_v_k_hat_share[1][(r + 3) % 4] = bf128_byte_combine_vk_share(vbb, (iwd + 8 * r), 1);
+      bf_w_dash_hat_share[1][r]        = bf128_byte_combine_bits(w_dash_share[1][(32 * j + 8 * r) / 8]);
       bf_v_w_dash_hat_share[1][r]      = bf128_byte_combine(v_w_dash_share[1] + (32 * j + 8 * r));
     }
 
     // Step: 13..17
     for (unsigned int r = 0; r <= 3; r++) {
-      // instead of storing in A0, A1, hash it
-      bf128_t mask = bf128_zero();
-      rand_mask((uint8_t*)mask.values, 16);     
-      const bf128_t tmp_0 = bf128_add(bf128_mul(bf_v_k_hat_share[0][r], bf_v_w_dash_hat_share[0][r]), bf128_add(bf128_mul(bf_v_k_hat_share[0][r], bf_v_w_dash_hat_share[1][r]), mask));
-      const bf128_t tmp_1 = bf128_add(bf128_mul(bf_v_k_hat_share[1][r], bf_v_w_dash_hat_share[0][r]), bf128_add(bf128_mul(bf_v_k_hat_share[1][r], bf_v_w_dash_hat_share[1][r]), mask));
-      zk_hash_128_update(a0_ctx, tmp_0);
-      zk_hash_128_update(a0_ctx + 1, tmp_1);
-      
-      rand_mask((uint8_t*)mask.values, 16);
       const bf128_t part_a = bf128_add(bf_v_k_hat_share[0][r], bf_k_hat_share[0][r]);
       const bf128_t part_b = bf128_add(bf_w_dash_hat_share[0][r], bf_v_w_dash_hat_share[0][r]);
-      const bf128_t part_c = bf128_add(bf_w_dash_hat_share[1][r], bf_v_w_dash_hat_share[1][r]);
-      const bf128_t part_d = bf128_add(bf_v_k_hat_share[1][r], bf_k_hat_share[1][r]);
-      const bf128_t share_0 = bf128_add(bf128_add(bf128_mul(part_a, part_b), bf128_add(bf128_mul(part_a, part_c),mask)), tmp_0);
-      const bf128_t share_1 = bf128_add(bf128_add(bf128_add(bf128_mul(part_d, part_b),bf128_add(bf128_mul(part_d, part_c),mask)), tmp_1), bf128_one());
+      const bf128_t part_d = bf128_add(bf_k_hat_share[1][r], bf_v_k_hat_share[1][r]);
+      const bf128_t part_c = bf128_add(bf_v_w_dash_hat_share[1][r], bf_w_dash_hat_share[1][r]);
+
+      // instead of storing in A0, A1, hash it
+      bf128_t mask1 = bf128_rand();
+      bf128_t mask2 = bf128_rand();
+      const bf128_t tmp_0 = bf128_add(bf128_mul(bf_v_k_hat_share[1][r], bf_v_w_dash_hat_share[0][r]), bf128_add(bf128_mul(bf_v_k_hat_share[0][r], bf_v_w_dash_hat_share[0][r]), bf128_add(bf128_mul(bf_v_k_hat_share[0][r], bf_v_w_dash_hat_share[1][r]), mask1)));
+      zk_hash_128_update(a0_ctx, tmp_0);
+      const bf128_t share_0 = bf128_add(bf128_mul(part_d, part_b), bf128_add(bf128_add(bf128_mul(part_a, part_b), bf128_add(bf128_mul(part_a, part_c), mask2)), tmp_0));
       zk_hash_128_update(a1_ctx, share_0);
-      zk_hash_128_update(a1_ctx+ 1, share_1);
       
-      
+      const bf128_t tmp_1 = bf128_add(bf128_mul(bf_v_k_hat_share[1][r], bf_v_w_dash_hat_share[1][r]), mask1);
+      zk_hash_128_update(a0_ctx + 1, tmp_1);
+      const bf128_t share_1 = bf128_add(bf128_add(bf128_add(bf128_mul(part_d, part_c), mask2), tmp_1), bf128_one());
+      zk_hash_128_update(a1_ctx+ 1, share_1); 
     }
     iwd = iwd + 128;
   }
@@ -952,31 +954,30 @@ static void aes_enc_constraints_Mkey_0_128_masked(const uint8_t* in_share, const
   bf128_t vs_share[2][FAEST_128F_Senc];
   bf128_t s_dash_share[2][FAEST_128F_Senc];
   bf128_t vs_dash_share[2][FAEST_128F_Senc];
+  // TODO: REWRITE TO 8 calls (2 of each) (wait for interleave)
   aes_enc_forward_128_1_masked(w_share, k_share, in_share, &s_share[0][0]);
   aes_enc_forward_128_vbb_vk_share(vbb, offset, in_share, 1, 0, NULL, &vs_share[0][0]);
   aes_enc_backward_128_1_masked(w_share, k_share, out_share, &s_dash_share[0][0]);
   aes_enc_backward_128_vbb_linear_access_share(vbb, offset, 1, 0, NULL, out_share, &vs_dash_share[0][0]);
 
   for (unsigned int j = 0; j < FAEST_128F_Senc; j++) {
-    // instead of storing in A0, A!, hash it
-    bf128_t mask = bf128_zero();
-    rand_mask((uint8_t*)mask.values, 16);
-    const bf128_t tmp_0 = bf128_add(bf128_mul(vs_share[0][j], vs_dash_share[0][j]), bf128_add(bf128_mul(vs_share[0][j], vs_dash_share[1][j]), mask));
-    const bf128_t tmp_1 = bf128_add(bf128_mul(vs_share[1][j], vs_dash_share[0][j]), bf128_add(bf128_mul(vs_share[1][j], vs_dash_share[1][j]), mask));
-    zk_hash_128_update(a0_ctx, tmp_0);
-    zk_hash_128_update(a0_ctx + 1, tmp_1);
-
-    rand_mask((uint8_t*)mask.values, 16);
     const bf128_t part_a = bf128_add(vs_share[0][j], s_share[0][j]);
     const bf128_t part_b = bf128_add(s_dash_share[0][j], vs_dash_share[0][j]);
-    const bf128_t part_c = bf128_add(s_dash_share[1][j], vs_dash_share[1][j]);
-    const bf128_t part_d = bf128_add(vs_share[1][j], s_share[1][j]);
-    const bf128_t share_0 = bf128_add(bf128_add(bf128_mul(part_a, part_b), bf128_add(bf128_mul(part_a, part_c),mask)), tmp_0);
-    const bf128_t share_1 = bf128_add(bf128_add(bf128_add(bf128_mul(part_d, part_b),bf128_add(bf128_mul(part_d, part_c),mask)), tmp_1), bf128_one());
-    zk_hash_128_update(a1_ctx, share_0);
-    zk_hash_128_update(a1_ctx+ 1, share_1);
-    
+    const bf128_t part_d = bf128_add(s_share[1][j], vs_share[1][j]);
+    const bf128_t part_c = bf128_add(vs_dash_share[1][j], s_dash_share[1][j]);
 
+    // instead of storing in A0, A!, hash it
+    bf128_t mask1 = bf128_rand();
+    bf128_t mask2 = bf128_rand();
+    const bf128_t tmp_0 = bf128_add(bf128_mul(vs_share[1][j], vs_dash_share[0][j]), bf128_add(bf128_mul(vs_share[0][j], vs_dash_share[0][j]), bf128_add(bf128_mul(vs_share[0][j], vs_dash_share[1][j]), mask1)));
+    zk_hash_128_update(a0_ctx, tmp_0);
+    const bf128_t share_0 = bf128_add(bf128_mul(part_d, part_b), bf128_add(bf128_add(bf128_mul(part_a, part_b), bf128_add(bf128_mul(part_a, part_c), mask2)), tmp_0));
+    zk_hash_128_update(a1_ctx, share_0);
+
+    const bf128_t tmp_1 = bf128_add(bf128_mul(vs_share[1][j], vs_dash_share[1][j]), mask1);
+    zk_hash_128_update(a0_ctx + 1, tmp_1);
+    const bf128_t share_1 = bf128_add(bf128_add(bf128_add(bf128_mul(part_d, part_c), mask2), tmp_1), bf128_one());
+    zk_hash_128_update(a1_ctx + 1, share_1);
   }
 }
 
@@ -1043,11 +1044,13 @@ static void aes_prove_128_masked(const uint8_t* w_share, vbb_t* vbb, const uint8
   // Step: 16..18
   uint8_t a_tilde_share[2][FAEST_128F_LAMBDA / 8];
   uint8_t b_tilde_share[2][FAEST_128F_LAMBDA / 8];
+
   zk_hash_128_finalize(a_tilde_share[0], &a1_ctx_share[0], bf128_load(get_vole_u_share(vbb, 0) + FAEST_128F_L / 8));
-  zk_hash_128_finalize(a_tilde_share[1], &a1_ctx_share[1], bf128_load(get_vole_u_share(vbb, 1) + FAEST_128F_L / 8));
   zk_hash_128_finalize(b_tilde_share[0], &a0_ctx_share[0], bf128_sum_poly_vbb_share(vbb, FAEST_128F_L, 0));
+  zk_hash_128_finalize(a_tilde_share[1], &a1_ctx_share[1], bf128_load(get_vole_u_share(vbb, 1) + FAEST_128F_L / 8));
   zk_hash_128_finalize(b_tilde_share[1], &a0_ctx_share[1], bf128_sum_poly_vbb_share(vbb, FAEST_128F_L, 1));
 
+  // LEAKS PUBLIC VALUES...
   for(int i = 0; i < FAEST_128F_LAMBDA / 8; i++){
     a_tilde[i] = a_tilde_share[0][i] ^ a_tilde_share[1][i];
     b_tilde[i] = b_tilde_share[0][i] ^ b_tilde_share[1][i];
