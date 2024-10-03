@@ -715,3 +715,14 @@ const bf128_t* get_vk_128_share(vbb_t* vbb, unsigned int idx, unsigned int share
     return get_vk_128(vbb, idx);
   }
 }
+
+void add_vole_to_vk_cache_share(vbb_t* vbb, unsigned int idx, bf128_t* VOLE, unsigned int share){
+  const unsigned int lambda       = vbb->params->faest_param.lambda;
+  const unsigned int lambda_bytes = lambda / 8;
+  unsigned int offset = idx * lambda_bytes;
+  if (share == 1) {
+    memcpy(vbb->vk_cache + offset, VOLE, lambda_bytes);
+  } else {
+    memcpy(vbb->vk_mask_cache + offset, VOLE, lambda_bytes);
+  }
+}
