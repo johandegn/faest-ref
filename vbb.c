@@ -12,7 +12,7 @@
 #include "fields.h"
 #include "parameters.h"
 
-#define ACCESS_PATTERN_TEST 1
+#define ACCESS_PATTERN_TEST 0
 
 static void setup_vk_cache(vbb_t* vbb);
 
