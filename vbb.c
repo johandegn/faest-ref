@@ -683,6 +683,35 @@ void reconstruct_vole(vbb_t* vbb) {
   }
 }
 
+const uint8_t* get_vole_v_hash_share(vbb_t* vbb, unsigned int idx, unsigned int share){
+  if (share == 1){
+    const unsigned int lambda        = vbb->params->faest_param.lambda;
+    const unsigned int ell           = vbb->params->faest_param.l;
+    const unsigned int ell_hat       = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
+    const unsigned int ell_hat_bytes = (ell_hat + 7) / 8;
+    const unsigned int offset = idx - vbb->cache_idx;
+
+    return vbb->v_mask_cache + offset * ell_hat_bytes;
+  }else{
+    return get_vole_v_hash(vbb, idx);
+  }
+}
+
+void prepare_aes_sign_share(vbb_t* vbb) {
+  if (vbb->full_size) {
+    vbb->cache_idx = 0;
+  } else {
+    recompute_aes_sign(vbb, 0, vbb->row_count);
+  }
+  setup_vk_cache(vbb);
+
+  const unsigned int lambda       = vbb->params->faest_param.lambda;
+  const unsigned int lambda_bytes = lambda / 8;
+  for (unsigned int i = 0; i < lambda; i++) {
+    memcpy(vbb->vk_mask_cache + i * lambda_bytes, get_vole_aes_128_share(vbb, i, 1), lambda_bytes);
+  }
+}
+
 const bf128_t* get_vole_aes_128_share(vbb_t* vbb, unsigned int idx, unsigned int share) {
   if (share == 1) {
     // printf(" ");
