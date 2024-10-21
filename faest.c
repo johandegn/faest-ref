@@ -344,7 +344,7 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
   hash_challenge_1(chall_1, mu, get_com_hash(&vbb), signature_c(sig, 0, params),
                    signature_iv(sig, params), lambda, l, tau);
 
-//#define WITNESS_MASKING
+#define WITNESS_MASKING
 #ifdef WITNESS_MASKING
   uint8_t* vk_mask = alloca(params->faest_param.Lke * lambdaBytes);
   uint8_t* v_mask = alloca(ell_hat * lambdaBytes);
