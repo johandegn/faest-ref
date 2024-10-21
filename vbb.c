@@ -538,14 +538,7 @@ static void setup_vk_cache(vbb_t* vbb) {
   if (is_em_variant(vbb->params->faest_paramid)) {
     return;
   }
-
-  if (lambda == 128 && vbb->party == SIGNER){
-    for (unsigned int i = 0; i < lambda; i++) {
-      memcpy(vbb->vk_cache + i * lambda_bytes, get_vole_aes(vbb, i), lambda_bytes);
-    }
-    return; 
-  }
-  for (unsigned int i = 0; i < vbb->params->faest_param.Lke; i++) {
+  for (unsigned int i = 0; i < vbb->params->faest_param.lambda; i++) {
     unsigned int offset = i * lambda_bytes;
     memcpy(vbb->vk_cache + offset, get_vole_aes(vbb, i), lambda_bytes);
   }
