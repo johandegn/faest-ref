@@ -514,6 +514,24 @@ const uint8_t* get_com_hash(vbb_t* vbb) {
 
 // V_k cache
 
+void add_vole_to_vk_cache(vbb_t* vbb, unsigned int idx, bf128_t* vole){
+  unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
+  unsigned int offset = idx * lambda_bytes;
+  memcpy(vbb->vk_cache + offset, vole, lambda_bytes);
+}
+
+void add_vole_to_vk_cache_192(vbb_t* vbb, unsigned int idx, bf192_t* vole){
+  unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
+  unsigned int offset = idx * lambda_bytes;
+  memcpy(vbb->vk_cache + offset, vole, lambda_bytes);
+}
+
+void add_vole_to_vk_cache_256(vbb_t* vbb, unsigned int idx, bf256_t* vole){
+  unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
+  unsigned int offset = idx * lambda_bytes;
+  memcpy(vbb->vk_cache + offset, vole, lambda_bytes);
+}
+
 static void setup_vk_cache(vbb_t* vbb) {
   unsigned int lambda = vbb->params->faest_param.lambda ;
   unsigned int lambda_bytes = lambda / 8;
