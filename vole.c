@@ -7,12 +7,14 @@
 #endif
 
 #include "vole.h"
+#include "vbb.h"
 #include "aes.h"
 #include "utils.h"
 #include "random_oracle.h"
 
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
 
 int ChalDec(const uint8_t* chal, unsigned int i, unsigned int k0, unsigned int t0, unsigned int k1,
             unsigned int t1, uint8_t* chalout) {
@@ -39,11 +41,26 @@ int ChalDec(const uint8_t* chal, unsigned int i, unsigned int k0, unsigned int t
   return 1;
 }
 
-void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned int ellhat,
-                             unsigned int start, unsigned int end,
+void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv,
+                             unsigned int col_start, unsigned int col_end, unsigned int row_start, unsigned int row_end,
                              sign_vole_mode_ctx_t vole_mode, const faest_paramset_t* params) {
+
+  unsigned int sd_expand_len = row_end-row_start;
+  unsigned int ellhat = params->faest_param.l + params->faest_param.lambda * 2 + UNIVERSAL_HASH_B_BITS;
+  printf("sd_expand_len is of length: %d\n", sd_expand_len);
+
+  //uint8_t incremented_iv[16];
+  //// Seed expansion needs to be offset by the rowStart
+  //if (rowStart > 0) {
+  //  memcpy(incremented_iv, iv, sizeof(incremented_iv));
+  //  // TODO: Handle EM
+  //  aes_iv_add(incremented_iv, rowStart/128); // TODO: replace with AES state size (128 bit)
+  //  sd_expand_len = rowEnd-rowStart + (rowStart % 128) // TODO: replace with AES state size (128 bit)
+  //}
+
   unsigned int lambda       = params->faest_param.lambda;
   unsigned int lambda_bytes = lambda / 8;
+  unsigned int sd_expand_len_bytes = (sd_expand_len + 7) / 8;
   unsigned int ellhat_bytes = (ellhat + 7) / 8;
   unsigned int tau          = params->faest_param.tau;
   unsigned int tau0         = params->faest_param.t0;
@@ -63,35 +80,39 @@ void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
     H1_init(&hcom_ctx, lambda);
   }
 
-  // STEP 1: To commit to [start,end] we first compute which trees we need to consider
+  // STEP 1: To commit to [col_start,col_end] we first compute which trees we need to consider
   unsigned int depth_tau_0     = tau0 * k0;
 
-  unsigned int k0_trees_begin  = (start < depth_tau_0) ? start / k0 : tau0;
-  unsigned int k1_trees_begin  = (start < depth_tau_0) ? 0 : (start - depth_tau_0) / k1;
-  unsigned int k0_trees_end    = (end < depth_tau_0) ? (end + (k0-1)) / k0 : tau0; // ceiled
-  unsigned int k1_trees_end    = (end < depth_tau_0) ? 0 : (end - depth_tau_0 + (k1-1)) / k1;  // ceiled
+  unsigned int k0_trees_begin  = (col_start < depth_tau_0) ? col_start / k0 : tau0;
+  unsigned int k1_trees_begin  = (col_start < depth_tau_0) ? 0 : (col_start - depth_tau_0) / k1;
+  unsigned int k0_trees_end    = (col_end < depth_tau_0)   ? (col_end + (k0-1)) / k0 : tau0; // ceiled
+  unsigned int k1_trees_end    = (col_end < depth_tau_0)   ? 0 : (col_end - depth_tau_0 + (k1-1)) / k1;  // ceiled
 
   unsigned int tree_start = k0_trees_begin+k1_trees_begin;
   unsigned int tree_end   = k0_trees_end+k1_trees_end;
 
   // Compute the cummulative sum of the tree depths until the requested start
-  unsigned int v_progress = k0 * k0_trees_begin + k1 * k1_trees_begin;
+  unsigned int col_progress = k0 * k0_trees_begin + k1 * k1_trees_begin;
+  
+  bool debug = false;
+  bool has_printed = false;
 
   for (unsigned int t = tree_start; t < tree_end; t++) {
     bool is_first_tree      = (t == 0);
     unsigned int tree_depth = t < tau0 ? k0 : k1;
 
-    // v_cache_offset is used to compute the index we should write v to relative to our cache
-    unsigned int v_cache_offset  = (v_progress > start) ? v_progress - start : 0; // (i.e. MAX(v_progress-start, 0))
-    // [v_start, v_end] is the v's that t provides (capped by requested start/end)
-    unsigned int v_start         = MAX(v_progress, start); 
-    unsigned int v_end           = MIN(end, v_progress+tree_depth);
+    // col_cache_offset is used to compute the index we should write v to relative to our cache
+    unsigned int col_cache_offset  = (col_progress > col_start) ? col_progress - col_start : 0; // (i.e. MAX(col_progress-col_start, 0))
+    // [t_col_start, t_col_end] is columns of v that t provides (capped by requested col_start/col_end)
+    unsigned int t_col_start    = MAX(col_progress, col_start); 
+    unsigned int t_col_end      = MIN(col_end, col_progress+tree_depth);
 
     // (Setup for STEP 2)
     const unsigned int num_seeds = 1 << tree_depth;
     uint8_t sd[MAX_LAMBDA_BYTES];
     uint8_t com[2*MAX_LAMBDA_BYTES];
     uint8_t* r = malloc(ellhat_bytes);
+    uint8_t* truncated_r = malloc(sd_expand_len_bytes); // temp
 
     uint8_t* u_ptr = NULL;
     if (vole_mode.mode != EXCLUDE_U_HCOM_C) {
@@ -100,8 +121,8 @@ void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
       memset(u_ptr, 0, ellhat_bytes);
     }
     if (vole_mode.mode != EXCLUDE_V) {
-      unsigned int v_count = v_end-v_start;
-      memset(vole_mode.v+(v_cache_offset*ellhat_bytes), 0, v_count*ellhat_bytes);
+      unsigned int t_column_count = t_col_end-t_col_start;
+      memset(vole_mode.v+(col_cache_offset*sd_expand_len_bytes), 0, t_column_count*sd_expand_len_bytes);
     }
     
     vec_com_t vec_com;
@@ -111,6 +132,20 @@ void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
     for (unsigned int i = 0; i < num_seeds; i++) {
       extract_sd_com(&vec_com, iv, lambda, i, sd, com);
       prg(sd, iv, r, lambda, ellhat_bytes); // Seed expansion
+      memcpy(truncated_r, ((uint8_t*) r + row_start/8), sd_expand_len_bytes);
+      if (!has_printed && debug) {
+        has_printed = true;
+        printf("Seed expanded to: ");
+        for (unsigned int W = 0; W < ellhat_bytes; W++) {
+          printf("%d ", r[W]);
+        }
+        printf("\n");
+        printf("With truncated: ");
+        for (unsigned int W = 0; W < sd_expand_len_bytes; W++) {
+          printf("%d ", truncated_r[W]);
+        }
+        printf("\n");
+      }
 
       if (vole_mode.mode != EXCLUDE_U_HCOM_C) {
         int factor_32 = ellhat_bytes / 4;
@@ -120,22 +155,30 @@ void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
                     ellhat_bytes - factor_32 * 4);
       }
       if (vole_mode.mode != EXCLUDE_V) {
-        for (unsigned int j = v_start; j < v_end; j++) {
+        for (unsigned int j = t_col_start; j < t_col_end; j++) {
           // Instead of writing v_j at V[j], use the v_cache_offset
-          uint8_t* write_idx = (vole_mode.v+(j-v_start+v_cache_offset) * ellhat_bytes);
-          unsigned int t_v = j-v_progress; // That is; t provides depth num of v's where t_v reflects the current v \in [0, depth]
+          uint8_t* write_idx = (vole_mode.v+(j-t_col_start+col_cache_offset) * sd_expand_len_bytes);
+          unsigned int t_v = j-col_progress; // That is; t_v reflects the current v \in [0, depth] in tree t
           // Apply r if the i/2^t_v is odd
           if ((i >> t_v) & 1) {
-            int factor_32 = ellhat_bytes / 4;
-            xor_u32_array((uint32_t*) write_idx, (uint32_t*)r, (uint32_t*) write_idx, factor_32);
-            xor_u8_array(write_idx + factor_32 * 4, r + factor_32 * 4, write_idx + factor_32 * 4,
-                        ellhat_bytes - factor_32 * 4);
+            int factor_32 = sd_expand_len_bytes / 4;
+            xor_u32_array((uint32_t*) write_idx, (uint32_t*)truncated_r, (uint32_t*) write_idx, factor_32);
+            xor_u8_array(write_idx + factor_32 * 4, truncated_r + factor_32 * 4, write_idx + factor_32 * 4,
+                        sd_expand_len_bytes - factor_32 * 4);
+          }
+          if (j == 0 && debug) {
+            printf("Memory at write_idx for col %d, seed: %d: ", j, i);
+            for (unsigned int W = 0; W < sd_expand_len_bytes; W++) {
+              printf("%d ", write_idx[W]);
+            }
+            printf("\n");
           }
         }
       }
     }
 
     free(r);
+    free(truncated_r);
 
     if (vole_mode.mode != EXCLUDE_U_HCOM_C) {
       if (!is_first_tree) {
@@ -145,7 +188,7 @@ void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
       H1_update(&hcom_ctx, h, lambda_bytes * 2);
     }
 
-    v_progress += tree_depth;
+    col_progress += tree_depth;
   }
 
   if (vole_mode.mode != EXCLUDE_U_HCOM_C) {
@@ -157,8 +200,9 @@ void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
   free(path);
 }
 
-void partial_vole_commit_rmo(const uint8_t* rootKey, const uint8_t* iv, unsigned int start,
-                             unsigned int len, const faest_paramset_t* params, uint8_t* v) {
+void partial_vole_commit_rmo(const uint8_t* rootKey, const uint8_t* iv,
+                             unsigned int start, unsigned int len, 
+                             const faest_paramset_t* params, uint8_t* v, vbb_t* vbb_temp) {
   unsigned int lambda       = params->faest_param.lambda;
   unsigned int lambda_bytes = lambda / 8;
   unsigned int ell_hat =
@@ -171,6 +215,14 @@ void partial_vole_commit_rmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
   unsigned int max_depth    = MAX(k0, k1);
 
   unsigned int end = start + len;
+
+  // temp fix: store row_length_bytes in the vbb so it knows the cmo column length to transpose
+  vbb_temp->row_length_bytes = (len + 7)/8;
+  printf("vbb_temp->row_length_bytes: %d\n", (len + 7)/8);
+
+  printf("Forwarding rmo -> cmo call with with cols: [%d, %d) rows: [%d, %d) - ellhat is: %d\n", 0, lambda, start, end, ell_hat);
+  partial_vole_commit_cmo(rootKey, iv, 0, lambda, start, end, vole_mode_v(v), params);
+  return;
 
   uint8_t* expanded_keys = malloc(tau * lambda_bytes);
   uint8_t * sd           = malloc(lambda_bytes);

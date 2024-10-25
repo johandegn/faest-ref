@@ -70,6 +70,16 @@ void aes_increment_iv(uint8_t* iv) {
   }
 }
 
+void aes_iv_add(uint8_t* iv, uint64_t addition) {
+    int i;
+    uint16_t carry = addition;
+    for (i = 15; i >= 0; i--) {
+        carry += iv[i];
+        iv[i] = (uint8_t) carry;
+        carry >>= 8;
+    }
+}
+
 // ## AES ##
 // Round Functions
 static void add_round_key(unsigned int round, aes_block_t state, const aes_round_keys_t* round_key,

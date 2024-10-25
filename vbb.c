@@ -28,7 +28,11 @@ ATTR_CONST ATTR_ALWAYS_INLINE static inline bool is_column_cached(vbb_t* vbb, un
 
 ATTR_CONST ATTR_ALWAYS_INLINE static inline bool is_row_cached(vbb_t* vbb, unsigned int index) {
   bool above_cache_start = index >= vbb->cache_idx;
-  bool below_cache_end   = index < vbb->cache_idx + vbb->row_count;
+  bool below_cache_end   = index < vbb->cache_idx + (vbb->row_count/8)*8;
+  if (above_cache_start && below_cache_end) {
+  } else {
+    printf("(TEST - RMO OLE #%d): NOT CACHED\n", index);
+  }
   return above_cache_start && below_cache_end;
 }
 
@@ -38,7 +42,7 @@ static void recompute_hash_sign(vbb_t* vbb, unsigned int start, unsigned int end
   const unsigned int ellhat = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
   unsigned int capped_end   = MIN(end, lambda);
 
-  partial_vole_commit_cmo(vbb->root_key, vbb->iv, ellhat, start, capped_end,
+  partial_vole_commit_cmo(vbb->root_key, vbb->iv, start, capped_end, 0, ellhat,
                           vole_mode_v(vbb->vole_cache), vbb->params);
   vbb->cache_idx = start;
 }
@@ -46,16 +50,22 @@ static void recompute_hash_sign(vbb_t* vbb, unsigned int start, unsigned int end
 static void recompute_vole_rmo(vbb_t* vbb, unsigned int start, unsigned int len) {
   const unsigned int lambda = vbb->params->faest_param.lambda;
   const unsigned int ell    = vbb->params->faest_param.l;
+  printf("(Call pre) Recomputing RMO for rows [%d, %d)\n", start, start+len);
 
-  if (start >= ell) {
-    start = start - len + 1;
-  }
-  if (len >= ell + lambda) {
-    start = 0;
-  } else if (start + len > ell + lambda) {
-    start = ell + lambda - len;
-  }
-  partial_vole_commit_rmo(vbb->root_key, vbb->iv, start, len, vbb->params, vbb->vole_cache);
+  // TODO: Outcommented in order to test rmo -> cmo forwarding
+  //if (start >= ell) {
+  //  start = start - len + 1;
+  //}
+  //if (len >= ell + lambda) {
+  //  start = 0;
+  //} else if (start + len > ell + lambda) {
+  //  start = ell + lambda - len;
+  //}
+
+  len = (len/8) * 8;
+
+  printf("(Call post) Recomputing RMO for rows [%d, %d)\n", start, start+len);
+  partial_vole_commit_rmo(vbb->root_key, vbb->iv, start, len, vbb->params, vbb->vole_cache, vbb);
   vbb->cache_idx = start;
 }
 
@@ -78,7 +88,7 @@ void init_vbb_sign(vbb_t* vbb, unsigned int len, const uint8_t* root_key, const 
   vbb->root_key     = root_key;
   vbb->full_size    = len >= ellhat;
   vbb->vole_U       = malloc(ellhat_bytes);
-  vbb->row_count    = row_count;
+  vbb->row_count    = (row_count*8)/8; // TODO
   vbb->vole_cache   = calloc(row_count, lambda_bytes);
   vbb->v_buf        = malloc(lambda_bytes);
   vbb->column_count = column_count;
@@ -91,7 +101,9 @@ void init_vbb_sign(vbb_t* vbb, unsigned int len, const uint8_t* root_key, const 
   sign_vole_mode_ctx_t mode = vbb->full_size ? vole_mode_all_sign(vbb->vole_cache, vbb->vole_U, vbb->com_hash, c)
                                     : vole_mode_u_hcom_c(vbb->vole_U, vbb->com_hash, c);
 
-  partial_vole_commit_cmo(vbb->root_key, vbb->iv, ellhat, 0, lambda, mode, vbb->params);
+  partial_vole_commit_cmo(vbb->root_key, vbb->iv,
+    0, lambda, 0, ellhat, 
+    mode, vbb->params);
 }
 
 void prepare_hash_sign(vbb_t* vbb) {
@@ -469,9 +481,18 @@ static inline uint8_t* get_vole_rmo(vbb_t* vbb, unsigned int idx) {
   if (vbb->full_size) {
     memset(vbb->v_buf, 0, lambda_bytes);
     // Transpose on the fly into v_buf
+    printf("(REAL - transposing following bits for OLE %d): ", idx);
     for (unsigned int column = 0; column != lambda; ++column) {
+      printf("%d ", *(vbb->vole_cache + column * ellhat_bytes));
       ptr_set_bit(vbb->v_buf, ptr_get_bit(vbb->vole_cache + column * ellhat_bytes, idx), column);
     }
+    printf("\n");
+
+    printf("(REAL - RMO OLE #%d): ", idx);
+    for (unsigned int i = 0; i < lambda_bytes; i++) {
+      printf("%d ", *(vbb->v_buf + i));
+    }
+    printf("\n");
     return vbb->v_buf;
   }
 
@@ -485,7 +506,25 @@ static inline uint8_t* get_vole_rmo(vbb_t* vbb, unsigned int idx) {
   }
 
   unsigned int offset = (idx - vbb->cache_idx) * lambda_bytes;
-  return vbb->vole_cache + offset;
+  //uint8_t* temp = vbb->vole_cache + offset; // old pointer that was returned
+
+  // on the fly transpose
+  memset(vbb->v_buf, 0, lambda_bytes);
+  printf("(TEST - transposing following bits for OLE %d): ", idx);
+  for (unsigned int column = 0; column != lambda; ++column) {
+    printf("%d ", *(vbb->vole_cache + column * vbb->row_length_bytes));
+    ptr_set_bit(vbb->v_buf, ptr_get_bit(vbb->vole_cache + column * vbb->row_length_bytes, idx), column);
+  }
+  printf("\n");
+  
+  printf("(TEST - RMO OLE #%d): ", idx);
+  for (unsigned int i = 0; i < lambda_bytes; i++) {
+    printf("%d ", *(vbb->v_buf + i));
+  }
+  printf("\n");
+
+  //return temp;
+  return vbb->v_buf;
 }
 
 const bf256_t* get_vole_rmo_256(vbb_t* vbb, unsigned int idx) {
@@ -513,7 +552,7 @@ void clean_vbb(vbb_t* vbb) {
   free(vbb->com_hash);
 
   if (vbb->full_size) {
-    free(vbb->v_buf);
+    free(vbb->v_buf); // TODO: memory leak - we should probably always free v_buf
   }
 
   if (vbb->party == VERIFIER) {

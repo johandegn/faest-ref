@@ -4,9 +4,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "vole.h"
 
 typedef struct vbb_t vbb_t;
+#include "vole.h"
 #include "fields.h"
 #include "faest_aes.h"
 
@@ -23,6 +23,7 @@ struct vbb_t {
   uint8_t* Dtilde_buf;
   // Common
   party_t party;
+  unsigned int row_length_bytes;
   unsigned int row_count;    // Budget of RMO computation
   unsigned int column_count; // Budget of CMO computation
   unsigned int cache_idx;

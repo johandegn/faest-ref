@@ -48,6 +48,7 @@ int rijndael256_encrypt_block(const aes_round_keys_t* key, const uint8_t* plaint
                               uint8_t* ciphertext);
 
 void aes_increment_iv(uint8_t* iv);
+void aes_iv_add(uint8_t* iv, uint64_t addition);
 
 uint8_t* aes_extend_witness(const uint8_t* key, const uint8_t* in, const faest_paramset_t* params);
 

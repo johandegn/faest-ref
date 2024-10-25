@@ -284,6 +284,34 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
   init_vbb_sign(&vbb, ell_hat, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
                  params);
 
+  prepare_aes_sign(&vbb);
+
+  vbb_t vbb_test;
+  init_vbb_sign(&vbb_test, ell_hat/8, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
+                 params);
+
+  prepare_aes_sign(&vbb_test);
+
+  printf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n********************************************************************************************************************\n");
+  printf("(Post setup/init)\n\n\n");
+
+  for (unsigned int i = 0; i < ell_hat; i++) {
+
+    const bf128_t* v_real = get_vole_rmo_128(&vbb, i);
+    const bf128_t* v_test = get_vole_rmo_128(&vbb_test, i);
+
+    bool b1 = v_real->values[0] == v_test->values[0];
+    bool b2 = v_real->values[1] == v_test->values[1];
+    //printf("OLE #%d - test: %llu%llu - real: %llu%llu\n", i, v_test->values[0], v_test->values[1], v_real->values[0], v_real->values[1]);
+
+    if (!b1 || !b2) {
+      printf("WRONG OLE at idx: %d\n", i);
+    }
+    
+  }
+
+  return;
+
   uint8_t chall_1[(5 * MAX_LAMBDA_BYTES) + 8];
   hash_challenge_1(chall_1, mu, get_com_hash(&vbb), signature_c(sig, 0, params),
                    signature_iv(sig, params), lambda, l, tau);

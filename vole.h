@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <assert.h>
 
+#include "vbb.h"
 #include "vc.h"
 #include "macros.h"
 
@@ -78,12 +79,12 @@ int ChalDec(const uint8_t* chal, unsigned int i, unsigned int k0, unsigned int t
             unsigned int t1, uint8_t* chalout);
 
 // Signer
-void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned int ellhat,
-                             unsigned int chunk_start, unsigned int chunk_end,
+void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv,
+                             unsigned int rowStart, unsigned int rowEnd, unsigned int colStart, unsigned int colEnd,
                              sign_vole_mode_ctx_t vole_mode, const faest_paramset_t* params);
 
 void partial_vole_commit_rmo(const uint8_t* rootKey, const uint8_t* iv, unsigned int start,
-                             unsigned int len, const faest_paramset_t* params, uint8_t* v);
+                             unsigned int len, const faest_paramset_t* params, uint8_t* v, vbb_t* vbb_temp);
 
 // Verifier
 void partial_vole_reconstruct_cmo(const uint8_t* iv, const uint8_t* chall, const uint8_t* const* pdec, 
