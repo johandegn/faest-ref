@@ -448,6 +448,8 @@ faest_sources = files(
   'vc.c',
   'vole.c',
   'vbb.c',
+  'faest_aes_masked.c',
+  'aes_masked.c'
 )
 
 # header files to install

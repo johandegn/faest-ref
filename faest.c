@@ -8,7 +8,9 @@
 
 #include "faest.h"
 #include "aes.h"
+#include "aes_masked.h"
 #include "faest_aes.h"
+#include "faest_aes_masked.h"
 #include "randomness.h"
 #include "random_oracle.h"
 #include "utils.h"
