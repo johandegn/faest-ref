@@ -161,8 +161,7 @@ void partial_vole_commit_rmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
                              unsigned int len, const faest_paramset_t* params, uint8_t* v) {
   unsigned int lambda       = params->faest_param.lambda;
   unsigned int lambda_bytes = lambda / 8;
-  unsigned int ell_hat =
-      params->faest_param.l + params->faest_param.lambda * 2 + UNIVERSAL_HASH_B_BITS;
+  unsigned int ell_hat = params->faest_param.l + lambda * 2 + UNIVERSAL_HASH_B_BITS;
   unsigned int ellhat_bytes = (ell_hat + 7) / 8;
   unsigned int tau          = params->faest_param.tau;
   unsigned int tau0         = params->faest_param.t0;
@@ -173,7 +172,7 @@ void partial_vole_commit_rmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
   unsigned int end = start + len;
 
   uint8_t* expanded_keys = malloc(tau * lambda_bytes);
-  uint8_t * sd           = malloc(lambda_bytes);
+  uint8_t* sd            = malloc(lambda_bytes);
   uint8_t* com           = malloc(lambda_bytes * 2);
   uint8_t* r             = malloc(ellhat_bytes);
   uint8_t* path          = malloc(lambda_bytes * max_depth);
