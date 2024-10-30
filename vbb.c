@@ -12,8 +12,6 @@
 #include "fields.h"
 #include "parameters.h"
 
-#define ACCESS_PATTERN_TEST 0
-
 static void setup_vk_cache(vbb_t* vbb);
 
 ATTR_CONST ATTR_ALWAYS_INLINE static inline bool is_em_variant(faest_paramid_t id) {
@@ -85,6 +83,7 @@ void init_vbb_sign(vbb_t* vbb, unsigned int len, const uint8_t* root_key, const 
 
   // Setup vk_buf if we are not in an EM variant
   if (!is_em_variant(vbb->params->faest_paramid)) {
+    // FIXME: do not initialize befor we initialize vk_cache..?
     vbb->vk_buf = malloc(lambda_bytes);
   }
   
@@ -454,18 +453,6 @@ static inline uint8_t* get_vole_rmo(vbb_t* vbb, unsigned int idx) {
   unsigned int ellhat       = vbb->params->faest_param.l + lambda * 2 + UNIVERSAL_HASH_B_BITS;
   unsigned int ellhat_bytes = (ellhat + 7) / 8;
 
-#if ACCESS_PATTERN_TEST
-  // Store the idx value in a file
-  FILE* file;
-  if (vbb->party == VERIFIER) {
-    file = fopen("access_pattern_verifier.txt", "a");
-  } else {
-    file = fopen("access_pattern_prover.txt", "a");
-  }
-  fprintf(file, "%d\n", idx);
-  fclose(file);
-#endif
-
   if (vbb->full_size) {
     memset(vbb->v_buf, 0, lambda_bytes);
     // Transpose on the fly into v_buf
@@ -537,6 +524,7 @@ void clean_vbb(vbb_t* vbb) {
 
 static void setup_vk_cache(vbb_t* vbb) {
   unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
+  // FIXME: Move this check outside the function
   if (is_em_variant(vbb->params->faest_paramid)) {
     return;
   }
