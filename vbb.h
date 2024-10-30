@@ -45,9 +45,9 @@ void clean_vbb(vbb_t* vbb);
 void prepare_hash_sign(vbb_t* vbb);
 void prepare_aes_sign(vbb_t* vbb);
 const uint8_t* get_vole_v_hash(vbb_t* vbb, unsigned int idx);
-const bf256_t* get_vole_rmo_256(vbb_t* vbb, unsigned int idx);
-const bf192_t* get_vole_rmo_192(vbb_t* vbb, unsigned int idx);
-const bf128_t* get_vole_rmo_128(vbb_t* vbb, unsigned int idx);
+const bf256_t* get_vole_v_256(vbb_t* vbb, unsigned int idx);
+const bf192_t* get_vole_v_192(vbb_t* vbb, unsigned int idx);
+const bf128_t* get_vole_v_128(vbb_t* vbb, unsigned int idx);
 const uint8_t* get_vole_u(vbb_t* vbb);
 const uint8_t* get_com_hash(vbb_t* vbb);
 void vector_open_ondemand(vbb_t* vbb, unsigned int idx, const uint8_t* s_, uint8_t* sig_pdec,

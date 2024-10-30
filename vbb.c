@@ -488,15 +488,15 @@ static inline uint8_t* get_vole_rmo(vbb_t* vbb, unsigned int idx) {
   return vbb->vole_cache + offset;
 }
 
-const bf256_t* get_vole_rmo_256(vbb_t* vbb, unsigned int idx) {
+const bf256_t* get_vole_v_256(vbb_t* vbb, unsigned int idx) {
   return (bf256_t*)get_vole_rmo(vbb, idx);
 }
 
-const bf192_t* get_vole_rmo_192(vbb_t* vbb, unsigned int idx) {
+const bf192_t* get_vole_v_192(vbb_t* vbb, unsigned int idx) {
   return (bf192_t*)get_vole_rmo(vbb, idx);
 }
 
-const bf128_t* get_vole_rmo_128(vbb_t* vbb, unsigned int idx) {
+const bf128_t* get_vole_v_128(vbb_t* vbb, unsigned int idx) {
   return (bf128_t*)get_vole_rmo(vbb, idx);
 }
 
@@ -512,6 +512,7 @@ void clean_vbb(vbb_t* vbb) {
   free(vbb->vole_cache);
   free(vbb->com_hash);
 
+  // FIXME: v_buf is always allocated...
   if (vbb->full_size) {
     free(vbb->v_buf);
   }
@@ -525,6 +526,7 @@ void clean_vbb(vbb_t* vbb) {
   // V_k cache
   if (!is_em_variant(vbb->params->faest_paramid)) {
     free(vbb->vk_buf);
+    // FIXME: We always allocate and use vbb->vk_cache. Let this stay, but only allocate and use if not full size.
     if (!vbb->full_size) {
       free(vbb->vk_cache);
     }

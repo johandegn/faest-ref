@@ -65,14 +65,14 @@ void compare_OLEs(vbb_t* vbb_full, vbb_t* vbb_nonfull){
     for(unsigned int i = 0; i < ell_hat; i++){
         uint8_t* OLE_full, *OLE_nonfull;
         if(lambda == 128){
-            OLE_full = (uint8_t*)get_vole_rmo_128(vbb_full, i);
-            OLE_nonfull = (uint8_t*)get_vole_rmo_128(vbb_nonfull, i);
+            OLE_full = (uint8_t*)get_vole_v_128(vbb_full, i);
+            OLE_nonfull = (uint8_t*)get_vole_v_128(vbb_nonfull, i);
         } else if(lambda == 192){
-            OLE_full = (uint8_t*)get_vole_rmo_192(vbb_full, i);
-            OLE_nonfull = (uint8_t*)get_vole_rmo_192(vbb_nonfull, i);
+            OLE_full = (uint8_t*)get_vole_v_192(vbb_full, i);
+            OLE_nonfull = (uint8_t*)get_vole_v_192(vbb_nonfull, i);
         } else if(lambda == 256){
-            OLE_full = (uint8_t*)get_vole_rmo_256(vbb_full, i);
-            OLE_nonfull = (uint8_t*)get_vole_rmo_256(vbb_nonfull, i);
+            OLE_full = (uint8_t*)get_vole_v_256(vbb_full, i);
+            OLE_nonfull = (uint8_t*)get_vole_v_256(vbb_nonfull, i);
         }
         for(unsigned int j = 0; j < lambda/8; j++){
             if(OLE_full[j] != OLE_nonfull[j]){
