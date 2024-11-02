@@ -84,6 +84,7 @@ void init_vbb_sign(vbb_t* vbb, unsigned int len, const uint8_t* root_key, const 
   // Setup vk_buf if we are not in an EM variant
   if (!is_em_variant(vbb->params->faest_paramid)) {
     // FIXME: do not initialize befor we initialize vk_cache..?
+    // FIXME: Could we not just reuse v_buf?
     vbb->vk_buf = malloc(lambda_bytes);
   }
   
