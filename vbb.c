@@ -44,6 +44,7 @@ static void recompute_hash_sign(vbb_t* vbb, unsigned int start, unsigned int end
 static void recompute_vole_rmo(vbb_t* vbb, unsigned int start, unsigned int len) {
   const unsigned int lambda = vbb->params->faest_param.lambda;
   const unsigned int ell    = vbb->params->faest_param.l;
+  const unsigned int ellhat = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
 
   if (start >= ell) {
     start = start - len + 1;
@@ -53,7 +54,8 @@ static void recompute_vole_rmo(vbb_t* vbb, unsigned int start, unsigned int len)
   } else if (start + len > ell + lambda) {
     start = ell + lambda - len;
   }
-  partial_vole_commit_rmo(vbb->root_key, vbb->iv, start, len, vbb->params, vbb->vole_cache);
+
+  partial_vole_commit(vbb->root_key, vbb->iv, ellhat, start, start+len, vbb->params, vbb->vole_cache);
   vbb->cache_idx = start;
 }
 
@@ -451,9 +453,28 @@ const uint8_t* get_vole_q_hash(vbb_t* vbb, unsigned int idx) {
 static inline uint8_t* get_vole_rmo(vbb_t* vbb, unsigned int idx) {
   unsigned int lambda       = vbb->params->faest_param.lambda;
   unsigned int lambda_bytes = lambda / 8;
-  unsigned int ellhat       = vbb->params->faest_param.l + lambda * 2 + UNIVERSAL_HASH_B_BITS;
-  unsigned int ellhat_bytes = (ellhat + 7) / 8;
 
+  // Check if the idx is within the cache
+  if (!is_row_cached(vbb, idx)) {
+    unsigned int rmo_budget = vbb->row_count;
+    if (vbb->party == VERIFIER) {
+      recompute_vole_rmo_reconstruct(vbb, idx, rmo_budget);
+    } else {
+      recompute_vole_rmo(vbb, idx, rmo_budget);
+    }
+  }
+
+  // Always transpose the VOLE access
+  // Compute the new idx based on the starting position of the cache
+  unsigned int idx_relative = idx - vbb->cache_idx;
+  memset(vbb->v_buf, 0, lambda_bytes);
+  // Transpose the VOLE into the buffer
+  for (unsigned int column = 0; column != lambda; ++column) {
+    ptr_set_bit(vbb->v_buf, ptr_get_bit(vbb->vole_cache, idx_relative + vbb->row_count * column), column);
+  }
+  return vbb->v_buf;
+
+  /*
   if (vbb->full_size) {
     memset(vbb->v_buf, 0, lambda_bytes);
     // Transpose on the fly into v_buf
@@ -474,6 +495,7 @@ static inline uint8_t* get_vole_rmo(vbb_t* vbb, unsigned int idx) {
 
   unsigned int offset = (idx - vbb->cache_idx) * lambda_bytes;
   return vbb->vole_cache + offset;
+  */
 }
 
 const bf256_t* get_vole_v_256(vbb_t* vbb, unsigned int idx) {

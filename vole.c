@@ -174,13 +174,15 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
   unsigned int k1           = params->faest_param.k1;
   unsigned int max_depth    = MAX(k0, k1);
 
+  unsigned int len       = end - start;
+  unsigned int len_bytes = (len + 7) / 8;
+
   uint8_t* expanded_keys = malloc(tau * lambda_bytes);
   uint8_t* sd            = malloc(lambda_bytes);
   uint8_t* com           = malloc(lambda_bytes * 2);
   uint8_t* r             = malloc(ellhat_bytes);
   uint8_t* path          = malloc(lambda_bytes * max_depth * 2);
-
-  unsigned int len = end - start;
+  uint8_t* r_trunc       = malloc(len_bytes);
 
   vec_com_t vec_com;
   memset(v, 0, ((size_t)len) * (size_t)lambda_bytes);
@@ -195,17 +197,36 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
     const unsigned int num_instances = 1 << depth;
     for (unsigned int i = 0; i < num_instances; i++) {
       extract_sd_com(&vec_com, iv, lambda, i, sd, com);
+      // TODO: only compute necessary part of r
       prg(sd, iv, r, lambda, ellhat_bytes);
 
-      uint8_t* write_idx = (v + j * ellhat_bytes);
-      unsigned int t_v = j - v_progress; // That is; t provides depth num of v's where t_v reflects
-                                         // the current v \in [0, depth]
-      // Apply r if the i/2^t_v is odd
-      if ((i >> t_v) & 1) {
-        int factor_32 = ellhat_bytes / 4;
-        xor_u32_array((uint32_t*)write_idx, (uint32_t*)r, (uint32_t*)write_idx, factor_32);
-        xor_u8_array(write_idx + factor_32 * 4, r + factor_32 * 4, write_idx + factor_32 * 4,
-                     ellhat_bytes - factor_32 * 4);
+      // Extract start to end bits from r
+      // For-loop going over bytes that needs to be copied from r to r_trunc
+      unsigned int bit_offset = start % 8;
+      unsigned int start_byte = start / 8;
+      for (unsigned int j = 0; j < len_bytes - 1; j++) {
+        r_trunc[j] = (r[start_byte + j] << bit_offset) | (r[start_byte + j + 1] >> (8 - bit_offset));
+      }
+      // Apply last byte
+      r_trunc[len_bytes - 1] = (r[start_byte + len_bytes - 1] << bit_offset) & 0xFF << bit_offset;
+      // XOR the truncated r with the v
+
+      // Iterate depth and XOR into correct entries
+      for (unsigned int j = 0; j < depth; j++) {
+        if ((i >> j) & 1) {
+          // Shift offset and xor into v
+          unsigned int row_bit_index = len * (col_idx + j);
+          unsigned int row_bit_offset = row_bit_index % 8;
+          v[row_bit_index / 8] ^= r_trunc[0] >> row_bit_offset;
+          // TODO: Use xor_u32_array most of the way
+          for (unsigned int k = 1; k < len_bytes; k++) {
+            v[row_bit_index / 8 + k] ^= r_trunc[k - 1] << (8 - row_bit_offset) | r_trunc[k] >> row_bit_offset;
+          }
+          // Avoid writing over byte boundery of v
+          if (row_bit_offset != 0) {
+            v[row_bit_index / 8 + len_bytes] ^= r_trunc[len_bytes - 1] << (8 - row_bit_offset);
+          }
+        }
       }
     }
 
@@ -217,72 +238,7 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
   free(com);
   free(expanded_keys);
   free(path);
-}
-
-void partial_vole_commit_rmo(const uint8_t* rootKey, const uint8_t* iv, unsigned int start,
-                             unsigned int len, const faest_paramset_t* params, uint8_t* v) {
-  unsigned int lambda       = params->faest_param.lambda;
-  unsigned int lambda_bytes = lambda / 8;
-  unsigned int ell_hat      = params->faest_param.l + lambda * 2 + UNIVERSAL_HASH_B_BITS;
-  unsigned int ellhat_bytes = (ell_hat + 7) / 8;
-  unsigned int tau          = params->faest_param.tau;
-  unsigned int tau0         = params->faest_param.t0;
-  unsigned int k0           = params->faest_param.k0;
-  unsigned int k1           = params->faest_param.k1;
-  unsigned int max_depth    = MAX(k0, k1);
-
-  unsigned int end = start + len;
-
-  uint8_t* expanded_keys = malloc(tau * lambda_bytes);
-  uint8_t* sd            = malloc(lambda_bytes);
-  uint8_t* com           = malloc(lambda_bytes * 2);
-  uint8_t* r             = malloc(ellhat_bytes);
-  uint8_t* path          = malloc(lambda_bytes * max_depth);
-
-  vec_com_t vec_com;
-  memset(v, 0, ((size_t)len) * (size_t)lambda_bytes);
-  prg(rootKey, iv, expanded_keys, lambda, lambda_bytes * tau);
-
-  unsigned int col_idx = 0;
-  for (unsigned int t = 0; t < tau; t++) {
-    unsigned int depth = t < tau0 ? k0 : k1;
-
-    vector_commitment(expanded_keys + t * lambda_bytes, lambda, depth, path, &vec_com);
-
-    unsigned int byte_offset = (col_idx / 8);
-    unsigned int bit_offset  = (col_idx % 8);
-
-    const unsigned int num_instances = 1 << depth;
-    for (unsigned int i = 0; i < num_instances; i++) {
-      extract_sd_com(&vec_com, iv, lambda, i, sd, com);
-      prg(sd, iv, r, lambda, ellhat_bytes);
-
-      for (unsigned int row_idx = start; row_idx < end; row_idx++) {
-        unsigned int byte_idx = row_idx / 8;
-        unsigned int bit_idx  = row_idx % 8;
-        // bit is r[row_idx]
-        uint8_t bit = (r[byte_idx] >> (bit_idx)) & 1;
-        if (bit == 0) {
-          continue;
-        }
-        unsigned int write_idx = (row_idx - start) * lambda_bytes + byte_offset;
-        unsigned int amount    = (bit_offset + depth + 7) / 8;
-        // Avoid carry by breaking into two steps
-        v[write_idx + 0] ^= i << bit_offset;
-        for (unsigned int j = 1; j < amount; j++) {
-          v[write_idx + j] ^= i >> (j * 8 - bit_offset);
-        }
-      }
-    }
-
-    col_idx += depth;
-  }
-
-  free(sd);
-  free(com);
-  free(r);
-  free(expanded_keys);
-  free(path);
+  free(r_trunc);
 }
 
 void partial_vole_reconstruct_cmo(const uint8_t* iv, const uint8_t* chall,
