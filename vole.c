@@ -209,6 +209,7 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
         r_trunc[j] = (r[start_byte + j] << bit_offset) | (r[start_byte + j + 1] >> (8 - bit_offset));
       }
       // Apply last byte
+      // FIXME: this is broken
       r_trunc[len_bytes - 1] = (r[start_byte + len_bytes - 1] << bit_offset) & 0xFF << bit_offset;
 
       // XOR directly into v instead of maintaining a stack to save memory
@@ -218,21 +219,24 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
           // Shift offset and XOR into v
           unsigned int row_bit_index = len * (col_idx + j);
           unsigned int row_bit_offset = row_bit_index % 8;
+          unsigned int row_byte_offset = row_bit_index / 8;
           // Apply first byte
-          v[row_bit_index / 8] ^= r_trunc[0] >> row_bit_offset;
+          v[row_byte_offset] ^= r_trunc[0] >> row_bit_offset;
           unsigned int k = 1;
           // Apply in words sized chunks
-          for (; k < len_bytes - sizeof(size_t); k += sizeof(size_t)) {
-            v[row_bit_index / 8 + k] ^= r_trunc[k - 1] << (8 - row_bit_offset);
-            *(size_t *)(v + row_bit_index / 8 + k) ^= *((size_t *)(r_trunc + k)) >> row_bit_offset;
+          if (sizeof(size_t) > len_bytes) { // Avoid overflow
+            for (; k < len_bytes - sizeof(size_t); k += sizeof(size_t)) {
+              v[row_byte_offset + k] ^= r_trunc[k - 1] << (8 - row_bit_offset);
+              *(size_t *)(v + row_byte_offset + k) ^= *(size_t *)(r_trunc + k) >> row_bit_offset;
+            }
           }
           // Apply the remaining
           for (; k < len_bytes; k++) {
-            v[row_bit_index / 8 + k] ^= r_trunc[k - 1] << (8 - row_bit_offset) | r_trunc[k] >> row_bit_offset;
+            v[row_byte_offset + k] ^= r_trunc[k - 1] << (8 - row_bit_offset) | r_trunc[k] >> row_bit_offset;
           }
           // Avoid writing last byte over boundery of v if aligend
           if (row_bit_offset != 0) {
-            v[row_bit_index / 8 + len_bytes] ^= r_trunc[len_bytes - 1] << (8 - row_bit_offset);
+            v[row_byte_offset + len_bytes] ^= r_trunc[len_bytes - 1] << (8 - row_bit_offset);
           }
         }
       }
