@@ -347,6 +347,7 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
         for (long long b = 0; b < 64; b++){
           printf("%u", (vh->values[j] >> b) & 1);
         }        
+        printf("\n");
         return;
       }
     }

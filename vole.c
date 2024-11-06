@@ -209,10 +209,10 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
       unsigned int bit_offset = start % 8;
       unsigned int start_byte = start / 8;
       // If aligned, copy over
-      if (bit_offset == 0) {
-        memcpy(r_trunc, r + start_byte, len_bytes);
-      }
-      else { // If not aligned
+      //if (bit_offset == 0) {
+      //  memcpy(r_trunc, r + start_byte, len_bytes);
+      //}
+      //else { // If not aligned
         for (unsigned int j = 0; j < len_bytes; j++) {
           r_trunc[j] = (r[start_byte + j] << bit_offset) | (r[start_byte + j + 1] >> (8 - bit_offset));
         }
@@ -223,10 +223,10 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
           // Get extra part
           r_trunc[len_bytes - 1] |= r[start_byte + len_bytes] >> (8 - bit_offset);
         }
-      }
+      //}
       // Clear final bits
       unsigned int bit_to_clear = (8 - (len % 8)) % 8;
-      r_trunc[len_bytes - 1] = r_trunc[len_bytes - 1] & ( 0xFF << bit_to_clear);
+      r_trunc[len_bytes - 1] &= (uint8_t)0xFF << bit_to_clear;
       
       /*
       for(int h = 0; h < 8; h++){
@@ -240,9 +240,9 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
         // Only apply to correct entries
         if ((i >> j) & 1) {
           // Shift offset and XOR into v
-          unsigned long row_bit_index = len * (col_idx + j);
-          unsigned int row_bit_offset = row_bit_index % 8; // 3
-          unsigned int row_byte_offset = row_bit_index / 8; // 4
+          unsigned long row_bit_index = (unsigned long)len * (unsigned long)(col_idx + j);
+          unsigned long row_bit_offset = row_bit_index % 8;
+          unsigned long row_byte_offset = row_bit_index / 8;
           // Apply first byte
           /*
           v: 01234567 01234567 01234567 012345
