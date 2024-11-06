@@ -188,6 +188,8 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
   memset(v, 0, ((size_t)len) * (size_t)lambda_bytes);
   prg(rootKey, iv, expanded_keys, lambda, lambda_bytes * tau);
 
+  printf("Len: %d\n", len);
+  printf("len_bytes: %d\n", len_bytes);
   unsigned int col_idx = 0;
   // Iterate over each tree
   for (unsigned int t = 0; t < tau; t++) {
@@ -197,6 +199,7 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
     vector_commitment(expanded_keys + t * lambda_bytes, lambda, depth, path, &vec_com);
 
     // Iterate each seed emmited from the tree
+    //printf("len_bytes: %d\n", len_bytes);
     for (unsigned int i = 0; i < num_instances; i++) {
       extract_sd_com(&vec_com, iv, lambda, i, sd, com);
       // TODO: only compute necessary part of r
@@ -223,18 +226,31 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
       }
       // Clear final bits
       unsigned int bit_to_clear = (8 - (len % 8)) % 8;
-      r_trunc[len_bytes - 1] &= 0xFF << bit_to_clear;
+      r_trunc[len_bytes - 1] = r_trunc[len_bytes - 1] & ( 0xFF << bit_to_clear);
       
+      /*
+      for(int h = 0; h < 8; h++){
+        printf("%d", (r_trunc[len_bytes - 1] >> (7-h)) & 1);
+      }
+      printf("\n");
+      */
+
       // XOR directly into v instead of maintaining a stack to save memory
       for (unsigned int j = 0; j < depth; j++) {
         // Only apply to correct entries
         if ((i >> j) & 1) {
           // Shift offset and XOR into v
-          unsigned int row_bit_index = len * (col_idx + j);
-          unsigned int row_bit_offset = row_bit_index % 8;    //6
-          unsigned int row_byte_offset = row_bit_index / 8;   //115
+          unsigned long row_bit_index = len * (col_idx + j);
+          unsigned int row_bit_offset = row_bit_index % 8; // 3
+          unsigned int row_byte_offset = row_bit_index / 8; // 4
           // Apply first byte
-          v[row_byte_offset] ^= r_trunc[0] >> row_bit_offset;
+          /*
+          v: 01234567 01234567 01234567 012345
+             67 01234567 01234567 01234567 0123
+             4567 01234567 01234567 01234567 01
+          
+          */
+          v[row_byte_offset] ^= r_trunc[0] << row_bit_offset;
           unsigned int k = 1;
           // Apply in words sized chunks
           /*
@@ -246,21 +262,24 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
           }
           */
           // Apply the remaining
-          for (; k < len_bytes; k++) {
-            v[row_byte_offset + k] ^= r_trunc[k - 1] << (8 - row_bit_offset) | r_trunc[k] >> row_bit_offset;
+          for (; k < len_bytes-1; k++) {
+            v[row_byte_offset + k] ^= (r_trunc[k - 1] >> (8 - row_bit_offset)) | (r_trunc[k] << row_bit_offset);
           }
           // Apply last byte
-          if (row_bit_offset == 0) {
-            //v[row_byte_offset + len_bytes] ^= r_trunc[len_bytes - 1];
+          // TODO this is broken, rest is working
+          v[row_byte_offset + len_bytes-1] ^= r_trunc[len_bytes - 2] >> (8 - row_bit_offset);
+          //v[row_byte_offset + len_bytes] ^= r_trunc[len_bytes - 1] << (8-row_bit_offset);
+
+          /*
+          for(int h = 0; h < 8; h++){
+            printf("%d", (v[row_byte_offset + len_bytes - 1] >> (7-h)) & 1);
           }
-          else {
-            printf("index %d\n", j);
-            v[row_byte_offset + len_bytes] ^= r_trunc[len_bytes - 1] << (8 - row_bit_offset);
-          }
+          printf("\n");
+          */
+          
         }
       }
     }
-
     col_idx += depth;
   }
 

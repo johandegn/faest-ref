@@ -281,7 +281,7 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
 
   vbb_t vbb;
   // TODO: find a solution for setting argument (dynamic or static)?
-  init_vbb_sign(&vbb, ell_hat/2-10, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
+  init_vbb_sign(&vbb, 25, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
                  params);
 
   uint8_t chall_1[(5 * MAX_LAMBDA_BYTES) + 8];
@@ -317,18 +317,35 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
   init_vbb_sign(&vbb_full, ell_hat, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
                 params);
   prepare_aes_sign(&vbb_full);
+  /*
+  for(int i = 0; i < 9; i++){
+    for(int h = 0; h < 8; h++){
+      printf("%d", (vbb.vole_cache[i] >> (h)) & 1);
+    }
+    printf(" ");
+  }
+  printf("get point bit\n");
+  for(int i = 0; i < 72; i++){
+    printf("%d",ptr_get_bit(vbb.vole_cache, i));
+  }
+  printf("get point bit\n");
+  for(int i = 0; i < 72; i++){
+    //printf("%d",ptr_get_bit(vbb_full.vole_cache, i));
+  }
+  */
+  printf("\n");
   for(int i = 0; i < ell_hat - 2* lambda - 16; i++){
-    bf128_t* vf = get_vole_v_128(&vbb_full, i);
     bf128_t* vh = get_vole_v_128(&vbb, i);
+    bf128_t* vf = get_vole_v_128(&vbb_full, i);
     for(int j = 0; j < 2; j++){
       if(vf->values[j] != vh->values[j]){
-        printf("Vole V differ at index %d, %lx, %lx\n", i, vf->values[j], vh->values[j]);
-        for (int b = 0; b < 64; b++){
-          printf("%d", vf->values[j] & (1 << b) ? 1 : 0);
+        printf("Vole V differ at index %d, %llx, %llx\n", i, vf->values[j], vh->values[j]);
+        for (long long b = 0; b < 64; b++){
+          printf("%u", (vf->values[j] >> b) & 1);
         }
         printf("\n");
-        for (int b = 0; b < 64; b++){
-          printf("%d", vh->values[j] & (1 << b) ? 1 : 0);
+        for (long long b = 0; b < 64; b++){
+          printf("%u", (vh->values[j] >> b) & 1);
         }        
         return;
       }
