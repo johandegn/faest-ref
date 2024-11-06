@@ -206,10 +206,10 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
       unsigned int bit_offset = start % 8;
       unsigned int start_byte = start / 8;
       // If aligned, copy over
-      if (bit_offset == 0) {
-        memcpy(r_trunc, r + start_byte, len_bytes);
-      }
-      else { // If not aligned
+      //if (bit_offset == 0) {
+      //  memcpy(r_trunc, r + start_byte, len_bytes);
+      //}
+      //else { // If not aligned
         for (unsigned int j = 0; j < len_bytes; j++) {
           r_trunc[j] = (r[start_byte + j] << bit_offset) | (r[start_byte + j + 1] >> (8 - bit_offset));
         }
@@ -220,19 +220,19 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
           // Get extra part
           r_trunc[len_bytes - 1] |= r[start_byte + len_bytes] >> (8 - bit_offset);
         }
-      }
+      //}
       // Clear final bits
       unsigned int bit_to_clear = (8 - (len % 8)) % 8;
-      r_trunc[len_bytes - 1] &= 0xFF << bit_to_clear;
+      r_trunc[len_bytes - 1] &= (uint8_t)0xFF << bit_to_clear;
       
       // XOR directly into v instead of maintaining a stack to save memory
       for (unsigned int j = 0; j < depth; j++) {
         // Only apply to correct entries
         if ((i >> j) & 1) {
           // Shift offset and XOR into v
-          unsigned int row_bit_index = len * (col_idx + j);
-          unsigned int row_bit_offset = row_bit_index % 8;    //6
-          unsigned int row_byte_offset = row_bit_index / 8;   //115
+          unsigned long row_bit_index = (unsigned long)len * (unsigned long)(col_idx + j);
+          unsigned long row_bit_offset = row_bit_index % 8;
+          unsigned long row_byte_offset = row_bit_index / 8;
           // Apply first byte
           v[row_byte_offset] ^= r_trunc[0] >> row_bit_offset;
           unsigned int k = 1;
@@ -250,11 +250,8 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
             v[row_byte_offset + k] ^= r_trunc[k - 1] << (8 - row_bit_offset) | r_trunc[k] >> row_bit_offset;
           }
           // Apply last byte
-          if (row_bit_offset == 0) {
-            //v[row_byte_offset + len_bytes] ^= r_trunc[len_bytes - 1];
-          }
-          else {
-            printf("index %d\n", j);
+          unsigned int rest = (len - ((8 - row_bit_offset) % 8)) % 8;
+          if (row_bit_offset != 0 && rest != 0) {
             v[row_byte_offset + len_bytes] ^= r_trunc[len_bytes - 1] << (8 - row_bit_offset);
           }
         }

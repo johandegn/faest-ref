@@ -317,19 +317,20 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
   init_vbb_sign(&vbb_full, ell_hat, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
                 params);
   prepare_aes_sign(&vbb_full);
-  for(int i = 0; i < ell_hat - 2* lambda - 16; i++){
-    bf128_t* vf = get_vole_v_128(&vbb_full, i);
-    bf128_t* vh = get_vole_v_128(&vbb, i);
+  for(unsigned int i = 0; i < ell_hat - 2* lambda - 16; i++){
+    const bf128_t* vf = get_vole_v_128(&vbb_full, i);
+    const bf128_t* vh = get_vole_v_128(&vbb, i);
     for(int j = 0; j < 2; j++){
       if(vf->values[j] != vh->values[j]){
-        printf("Vole V differ at index %d, %lx, %lx\n", i, vf->values[j], vh->values[j]);
-        for (int b = 0; b < 64; b++){
-          printf("%d", vf->values[j] & (1 << b) ? 1 : 0);
+        printf("Vole V differ at index %u, (%d), %lx, %lx\n", i, j, vf->values[j], vh->values[j]);
+        for (int b = 63; b >= 0; b--){
+          printf("%d", vf->values[j] & (1UL << b) ? 1 : 0);
         }
         printf("\n");
         for (int b = 0; b < 64; b++){
-          printf("%d", vh->values[j] & (1 << b) ? 1 : 0);
+          printf("%d", vh->values[j] & (1UL << b) ? 1 : 0);
         }        
+        printf("\n");
         return;
       }
     }
