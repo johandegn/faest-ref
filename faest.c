@@ -281,7 +281,7 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
 
   vbb_t vbb;
   // TODO: find a solution for setting argument (dynamic or static)?
-  init_vbb_sign(&vbb, ell_hat/2, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
+  init_vbb_sign(&vbb, ell_hat/2-10, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
                  params);
 
   uint8_t chall_1[(5 * MAX_LAMBDA_BYTES) + 8];
@@ -311,6 +311,30 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
                    lambda, l);
 
   prepare_aes_sign(&vbb);
+
+  // Debug
+  vbb_t vbb_full;
+  init_vbb_sign(&vbb_full, ell_hat, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
+                params);
+  prepare_aes_sign(&vbb_full);
+  for(int i = 0; i < ell_hat - 2* lambda - 16; i++){
+    bf128_t* vf = get_vole_v_128(&vbb_full, i);
+    bf128_t* vh = get_vole_v_128(&vbb, i);
+    for(int j = 0; j < 2; j++){
+      if(vf->values[j] != vh->values[j]){
+        printf("Vole V differ at index %d, %lx, %lx\n", i, vf->values[j], vh->values[j]);
+        for (int b = 0; b < 64; b++){
+          printf("%d", vf->values[j] & (1 << b) ? 1 : 0);
+        }
+        printf("\n");
+        for (int b = 0; b < 64; b++){
+          printf("%d", vh->values[j] & (1 << b) ? 1 : 0);
+        }        
+        return;
+      }
+    }
+  }
+
   uint8_t b_tilde[MAX_LAMBDA_BYTES];
   aes_prove(w, &vbb, owf_input, owf_output, chall_2, signature_a_tilde(sig, params), b_tilde,
             params);
