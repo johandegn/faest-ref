@@ -281,7 +281,7 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
 
   vbb_t vbb;
   // TODO: find a solution for setting argument (dynamic or static)?
-  init_vbb_sign(&vbb, 25, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
+  init_vbb_sign(&vbb, 31, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
                  params);
 
   uint8_t chall_1[(5 * MAX_LAMBDA_BYTES) + 8];
@@ -325,12 +325,12 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
     printf(" ");
   }
   printf("get point bit\n");
-  for(int i = 0; i < 72; i++){
+  for(int i = 0; i < 31; i++){
     printf("%d",ptr_get_bit(vbb.vole_cache, i));
   }
-  printf("get point bit\n");
-  for(int i = 0; i < 72; i++){
-    //printf("%d",ptr_get_bit(vbb_full.vole_cache, i));
+  printf("\nget point bit\n");
+  for(int i = 0; i < 31; i++){
+    printf("%d",ptr_get_bit(vbb_full.vole_cache, i));
   }
   */
   printf("\n");
@@ -342,10 +342,16 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
         printf("Vole V differ at index %d, %llx, %llx\n", i, vf->values[j], vh->values[j]);
         for (long long b = 0; b < 64; b++){
           printf("%u", (vf->values[j] >> b) & 1);
+          if(b%8==7){
+            printf(" ");
+          }
         }
         printf("\n");
         for (long long b = 0; b < 64; b++){
           printf("%u", (vh->values[j] >> b) & 1);
+          if(b%8==7){
+            printf(" ");
+          }
         }        
         printf("\n");
         return;

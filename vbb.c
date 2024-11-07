@@ -460,6 +460,7 @@ static inline uint8_t* get_vole_rmo(vbb_t* vbb, unsigned int idx) {
     if (vbb->party == VERIFIER) {
       recompute_vole_rmo_reconstruct(vbb, idx, rmo_budget);
     } else {
+      printf("Trigger recomputation at %d\n", idx);
       recompute_vole_rmo(vbb, idx, rmo_budget);
     }
   }

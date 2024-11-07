@@ -188,8 +188,8 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
   memset(v, 0, ((size_t)len) * (size_t)lambda_bytes);
   prg(rootKey, iv, expanded_keys, lambda, lambda_bytes * tau);
 
-  printf("Len: %d\n", len);
-  printf("len_bytes: %d\n", len_bytes);
+  //printf("Len: %d\n", len);
+  //printf("len_bytes: %d\n", len_bytes);
   unsigned int col_idx = 0;
   // Iterate over each tree
   for (unsigned int t = 0; t < tau; t++) {
@@ -205,6 +205,7 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
       // TODO: only compute necessary part of r
       prg(sd, iv, r, lambda, ellhat_bytes);
 
+      //memset(r_trunc, 0, len_bytes);
       // Extract and align the requested part of r
       unsigned int bit_offset = start % 8;
       unsigned int start_byte = start / 8;
@@ -226,7 +227,8 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
       //}
       // Clear final bits
       unsigned int bit_to_clear = (8 - (len % 8)) % 8;
-      r_trunc[len_bytes - 1] &= (uint8_t)0xFF << bit_to_clear;
+      //printf("bits to clear: %d\n", bit_to_clear);
+      r_trunc[len_bytes - 1] &= (uint8_t)0xFF >> bit_to_clear;
       
       /*
       for(int h = 0; h < 8; h++){
@@ -262,13 +264,18 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
           }
           */
           // Apply the remaining
-          for (; k < len_bytes-1; k++) {
+          for (; k < len_bytes; k++) {
             v[row_byte_offset + k] ^= (r_trunc[k - 1] >> (8 - row_bit_offset)) | (r_trunc[k] << row_bit_offset);
           }
           // Apply last byte
           // TODO this is broken, rest is working
-          v[row_byte_offset + len_bytes-1] ^= r_trunc[len_bytes - 2] >> (8 - row_bit_offset);
+          //v[row_byte_offset + len_bytes-1] ^= r_trunc[len_bytes - 2] >> (8 - row_bit_offset);
           //v[row_byte_offset + len_bytes] ^= r_trunc[len_bytes - 1] << (8-row_bit_offset);
+          /*
+          */
+          if (row_bit_offset != 0){
+            v[row_byte_offset + len_bytes] ^= r_trunc[len_bytes - 1] >> (8-row_bit_offset);
+          }
 
           /*
           for(int h = 0; h < 8; h++){
