@@ -526,6 +526,7 @@ static void aes_enc_backward_128_1_round(const uint8_t* x, const uint8_t* xk, co
         const uint8_t xout = out[(ird - 128 * (FAEST_128F_R - 1)) / 8];
         xtilde             = xout ^ xk[(128 + ird) / 8];
       }
+      
 
       // Step: 12..17 (bit spliced)
       // set_bit((1 ^ Mtag) & (1 ^ Mkey), 0) ^ set_bit((1 ^ Mtag) & (1 ^ Mkey), 2) == 0x5
