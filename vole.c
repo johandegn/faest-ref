@@ -215,14 +215,14 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
       //}
       //else { // If not aligned
         for (unsigned int j = 0; j < len_bytes; j++) {
-          r_trunc[j] = (r[start_byte + j] << bit_offset) | (r[start_byte + j + 1] >> (8 - bit_offset));
+          r_trunc[j] = (r[start_byte + j] >> bit_offset) | (r[start_byte + j + 1] << (8 - bit_offset));
         }
         // Get last part
-        r_trunc[len_bytes - 1] = (r[start_byte + len_bytes - 1] << bit_offset);
+        r_trunc[len_bytes - 1] = (r[start_byte + len_bytes - 1] >> bit_offset);
         unsigned int rest = len - (len_bytes - 1) * 8;
         if (rest > 8 - bit_offset) {
           // Get extra part
-          r_trunc[len_bytes - 1] |= r[start_byte + len_bytes] >> (8 - bit_offset);
+          r_trunc[len_bytes - 1] |= r[start_byte + len_bytes] << (8 - bit_offset);
         }
       //}
       // Clear final bits
@@ -231,10 +231,24 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
       r_trunc[len_bytes - 1] &= (uint8_t)0xFF >> bit_to_clear;
       
       /*
-      for(int h = 0; h < 8; h++){
-        printf("%d", (r_trunc[len_bytes - 1] >> (7-h)) & 1);
+      if(start == 31){
+        for(int i = 0; i < 31; i++){
+          printf("%d",ptr_get_bit(r, i+start));
+          if(i%8==7){
+            printf(" ");
+          }
+        }
+        printf("\n");
+
+        for(int i = 0; i < 31; i++){
+          printf("%d",ptr_get_bit(r_trunc, i));
+          if(i%8==7){
+            printf(" ");
+          }
+        }
+        printf("\n");
+        return;
       }
-      printf("\n");
       */
 
       // XOR directly into v instead of maintaining a stack to save memory
