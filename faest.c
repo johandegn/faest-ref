@@ -307,7 +307,6 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
   }
 
   vbb_t vbb;
-  // TODO: find a solution for setting argument (dynamic or static)?
   const unsigned int len = ell_hat;
   uint8_t* hcom          = alloca(MAX_LAMBDA_BYTES * 2);
   uint8_t* u             = alloca(ell_hat / 8);
@@ -317,7 +316,9 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
   uint8_t* vk_cache      = NULL;    
   if (!(params->faest_paramid > 6)) {
     vk_buf        = alloca(lambdaBytes);
-    vk_cache      = alloca(params->faest_param.Lke * lambdaBytes);
+    if (len < ell_hat){
+      vk_cache      = alloca(params->faest_param.Lke * lambdaBytes);
+    }
   }
   init_stack_allocations_sign(&vbb, hcom, u, v_cache, v_buf, vk_buf, vk_cache);
   init_vbb_sign(&vbb, len, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
