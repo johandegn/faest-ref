@@ -16,11 +16,6 @@
 #include "universal_hashing.h"
 #include "vbb.h"
 
-// TODO remove includes
-#include <string.h>
-#include <stdio.h>
-#include "util.h"
-
 // helpers to compute position in signature (sign)
 
 ATTR_PURE static inline uint8_t* signature_c(uint8_t* base_ptr, unsigned int index,
@@ -280,9 +275,8 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
   }
 
   vbb_t vbb;
-  // TODO: find a solution for setting argument (dynamic or static)?
-  init_vbb_sign(&vbb, ell_hat/2, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
-                 params);
+  init_vbb_sign(&vbb, ell_hat, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
+                params);
 
   uint8_t chall_1[(5 * MAX_LAMBDA_BYTES) + 8];
   hash_challenge_1(chall_1, mu, get_com_hash(&vbb), signature_c(sig, 0, params),
@@ -311,54 +305,6 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
                    lambda, l);
 
   prepare_aes_sign(&vbb);
-
-  // Debug
-  vbb_t vbb_full;
-  init_vbb_sign(&vbb_full, ell_hat, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
-                params);
-  prepare_aes_sign(&vbb_full);
-  /*
-  for(int i = 0; i < 9; i++){
-    for(int h = 0; h < 8; h++){
-      printf("%d", (vbb.vole_cache[i] >> (h)) & 1);
-    }
-    printf(" ");
-  }
-  printf("get point bit\n");
-  for(int i = 0; i < 31; i++){
-    printf("%d",ptr_get_bit(vbb.vole_cache, i));
-  }
-  printf("\nget point bit\n");
-  for(int i = 0; i < 31; i++){
-    printf("%d",ptr_get_bit(vbb_full.vole_cache, i));
-  }
-  */
-  printf("\n");
-  for(int i = 0; i < ell_hat - 2* lambda - 16; i++){
-    bf128_t* vh = get_vole_v_128(&vbb, i);
-    bf128_t* vf = get_vole_v_128(&vbb_full, i);
-    for(int j = 0; j < 2; j++){
-      if(vf->values[j] != vh->values[j]){
-        printf("Vole V differ at index %d, %llx, %llx\n", i, vf->values[j], vh->values[j]);
-        for (long long b = 0; b < 64; b++){
-          printf("%u", (vf->values[j] >> b) & 1);
-          if(b%8==7){
-            printf(" ");
-          }
-        }
-        printf("\n");
-        for (long long b = 0; b < 64; b++){
-          printf("%u", (vh->values[j] >> b) & 1);
-          if(b%8==7){
-            printf(" ");
-          }
-        }        
-        printf("\n");
-        return;
-      }
-    }
-  }
-
   uint8_t b_tilde[MAX_LAMBDA_BYTES];
   aes_prove(w, &vbb, owf_input, owf_output, chall_2, signature_a_tilde(sig, params), b_tilde,
             params);

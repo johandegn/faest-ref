@@ -39,9 +39,9 @@ int ChalDec(const uint8_t* chal, unsigned int i, unsigned int k0, unsigned int t
   return 1;
 }
 
-void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned int ellhat,
-                             unsigned int start, unsigned int end, sign_vole_mode_ctx_t vole_mode,
-                             const faest_paramset_t* params) {
+void partial_vole_commit_column(const uint8_t* rootKey, const uint8_t* iv, unsigned int ellhat,
+                                unsigned int start, unsigned int end,
+                                sign_vole_mode_ctx_t vole_mode, const faest_paramset_t* params) {
   unsigned int lambda       = params->faest_param.lambda;
   unsigned int lambda_bytes = lambda / 8;
   unsigned int ellhat_bytes = (ellhat + 7) / 8;
@@ -54,6 +54,7 @@ void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
   uint8_t* expanded_keys = malloc(tau * lambda_bytes);
   prg(rootKey, iv, expanded_keys, lambda, lambda_bytes * tau);
   uint8_t* path = malloc(lambda_bytes * max_depth * 2);
+  uint8_t* r    = malloc(ellhat_bytes);
 
   H1_context_t hcom_ctx;
   H1_context_t com_ctx;
@@ -93,8 +94,6 @@ void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
     const unsigned int num_seeds = 1 << tree_depth;
     uint8_t sd[MAX_LAMBDA_BYTES];
     uint8_t com[2 * MAX_LAMBDA_BYTES];
-    // FIXME: do not malloc and free r for each tree..
-    uint8_t* r = malloc(ellhat_bytes);
 
     uint8_t* u_ptr = NULL;
     if (vole_mode.mode != EXCLUDE_U_HCOM_C) {
@@ -140,8 +139,6 @@ void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
       }
     }
 
-    free(r);
-
     if (vole_mode.mode != EXCLUDE_U_HCOM_C) {
       if (!is_first_tree) {
         xor_u8_array(vole_mode.u, u_ptr, u_ptr, ellhat_bytes); // Correction values
@@ -158,13 +155,14 @@ void partial_vole_commit_cmo(const uint8_t* rootKey, const uint8_t* iv, unsigned
     free(h);
   }
 
+  free(r);
   free(expanded_keys);
   free(path);
 }
 
-void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int ellhat,
-                         unsigned int start, unsigned int end, const faest_paramset_t* params,
-                         uint8_t* v) {
+void partial_vole_commit_row(const uint8_t* rootKey, const uint8_t* iv, unsigned int ellhat,
+                             unsigned int start, unsigned int end, const faest_paramset_t* params,
+                             uint8_t* v) {
   unsigned int lambda       = params->faest_param.lambda;
   unsigned int lambda_bytes = lambda / 8;
   unsigned int ellhat_bytes = (ellhat + 7) / 8;
@@ -188,116 +186,62 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
   memset(v, 0, ((size_t)len) * (size_t)lambda_bytes);
   prg(rootKey, iv, expanded_keys, lambda, lambda_bytes * tau);
 
-  //printf("Len: %d\n", len);
-  //printf("len_bytes: %d\n", len_bytes);
   unsigned int col_idx = 0;
   // Iterate over each tree
   for (unsigned int t = 0; t < tau; t++) {
-    unsigned int depth = t < tau0 ? k0 : k1;
+    unsigned int depth         = t < tau0 ? k0 : k1;
     unsigned int num_instances = 1 << depth;
 
     vector_commitment(expanded_keys + t * lambda_bytes, lambda, depth, path, &vec_com);
 
     // Iterate each seed emmited from the tree
-    //printf("len_bytes: %d\n", len_bytes);
     for (unsigned int i = 0; i < num_instances; i++) {
       extract_sd_com(&vec_com, iv, lambda, i, sd, com);
-      // TODO: only compute necessary part of r
       prg(sd, iv, r, lambda, ellhat_bytes);
 
-      //memset(r_trunc, 0, len_bytes);
       // Extract and align the requested part of r
       unsigned int bit_offset = start % 8;
       unsigned int start_byte = start / 8;
       // If aligned, copy over
-      //if (bit_offset == 0) {
-      //  memcpy(r_trunc, r + start_byte, len_bytes);
-      //}
-      //else { // If not aligned
+      if (bit_offset == 0) {
+        memcpy(r_trunc, r + start_byte, len_bytes);
+      } else { // If not aligned
         for (unsigned int j = 0; j < len_bytes; j++) {
-          r_trunc[j] = (r[start_byte + j] >> bit_offset) | (r[start_byte + j + 1] << (8 - bit_offset));
+          r_trunc[j] =
+              (r[start_byte + j] >> bit_offset) | (r[start_byte + j + 1] << (8 - bit_offset));
         }
         // Get last part
         r_trunc[len_bytes - 1] = (r[start_byte + len_bytes - 1] >> bit_offset);
-        unsigned int rest = len - (len_bytes - 1) * 8;
+        unsigned int rest      = len - (len_bytes - 1) * 8;
         if (rest > 8 - bit_offset) {
           // Get extra part
           r_trunc[len_bytes - 1] |= r[start_byte + len_bytes] << (8 - bit_offset);
         }
-      //}
+      }
       // Clear final bits
       unsigned int bit_to_clear = (8 - (len % 8)) % 8;
-      //printf("bits to clear: %d\n", bit_to_clear);
       r_trunc[len_bytes - 1] &= (uint8_t)0xFF >> bit_to_clear;
-      
-      /*
-      if(start == 31){
-        for(int i = 0; i < 31; i++){
-          printf("%d",ptr_get_bit(r, i+start));
-          if(i%8==7){
-            printf(" ");
-          }
-        }
-        printf("\n");
-
-        for(int i = 0; i < 31; i++){
-          printf("%d",ptr_get_bit(r_trunc, i));
-          if(i%8==7){
-            printf(" ");
-          }
-        }
-        printf("\n");
-        return;
-      }
-      */
 
       // XOR directly into v instead of maintaining a stack to save memory
       for (unsigned int j = 0; j < depth; j++) {
         // Only apply to correct entries
         if ((i >> j) & 1) {
           // Shift offset and XOR into v
-          unsigned long row_bit_index = (unsigned long)len * (unsigned long)(col_idx + j);
-          unsigned long row_bit_offset = row_bit_index % 8;
+          unsigned long row_bit_index   = (unsigned long)len * (unsigned long)(col_idx + j);
+          unsigned long row_bit_offset  = row_bit_index % 8;
           unsigned long row_byte_offset = row_bit_index / 8;
           // Apply first byte
-          /*
-          v: 01234567 01234567 01234567 012345
-             67 01234567 01234567 01234567 0123
-             4567 01234567 01234567 01234567 01
-          
-          */
           v[row_byte_offset] ^= r_trunc[0] << row_bit_offset;
           unsigned int k = 1;
-          // Apply in words sized chunks
-          /*
-          if (sizeof(size_t) > len_bytes) { // Avoid overflow
-            for (; k < len_bytes - sizeof(size_t); k += sizeof(size_t)) {
-              v[row_byte_offset + k] ^= r_trunc[k - 1] << (8 - row_bit_offset);
-              *(size_t *)(v + row_byte_offset + k) ^= *(size_t *)(r_trunc + k) >> row_bit_offset;
-            }
-          }
-          */
           // Apply the remaining
           for (; k < len_bytes; k++) {
-            v[row_byte_offset + k] ^= (r_trunc[k - 1] >> (8 - row_bit_offset)) | (r_trunc[k] << row_bit_offset);
-          }
-          // Apply last byte
-          // TODO this is broken, rest is working
-          //v[row_byte_offset + len_bytes-1] ^= r_trunc[len_bytes - 2] >> (8 - row_bit_offset);
-          //v[row_byte_offset + len_bytes] ^= r_trunc[len_bytes - 1] << (8-row_bit_offset);
-          /*
-          */
-          if (row_bit_offset != 0){
-            v[row_byte_offset + len_bytes] ^= r_trunc[len_bytes - 1] >> (8-row_bit_offset);
+            v[row_byte_offset + k] ^=
+                (r_trunc[k - 1] >> (8 - row_bit_offset)) | (r_trunc[k] << row_bit_offset);
           }
 
-          /*
-          for(int h = 0; h < 8; h++){
-            printf("%d", (v[row_byte_offset + len_bytes - 1] >> (7-h)) & 1);
+          if (row_bit_offset != 0) {
+            v[row_byte_offset + len_bytes] ^= r_trunc[len_bytes - 1] >> (8 - row_bit_offset);
           }
-          printf("\n");
-          */
-          
         }
       }
     }
@@ -312,11 +256,11 @@ void partial_vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int
   free(r_trunc);
 }
 
-void partial_vole_reconstruct_cmo(const uint8_t* iv, const uint8_t* chall,
-                                  const uint8_t* const* pdec, const uint8_t* const* com_j,
-                                  unsigned int ellhat, unsigned int start, unsigned int len,
-                                  verify_vole_mode_ctx_t vole_mode,
-                                  const faest_paramset_t* params) {
+void partial_vole_reconstruct_column(const uint8_t* iv, const uint8_t* chall,
+                                     const uint8_t* const* pdec, const uint8_t* const* com_j,
+                                     unsigned int ellhat, unsigned int start, unsigned int len,
+                                     verify_vole_mode_ctx_t vole_mode,
+                                     const faest_paramset_t* params) {
   unsigned int lambda       = params->faest_param.lambda;
   unsigned int lambda_bytes = lambda / 8;
   unsigned int ellhat_bytes = (ellhat + 7) / 8;
@@ -436,7 +380,7 @@ void partial_vole_reconstruct_cmo(const uint8_t* iv, const uint8_t* chall,
   }
 }
 
-void partial_vole_reconstruct_rmo(const uint8_t* iv, const uint8_t* chall,
+void partial_vole_reconstruct_row(const uint8_t* iv, const uint8_t* chall,
                                   const uint8_t* const* pdec, const uint8_t* const* com_j,
                                   uint8_t* q, unsigned int ellhat, const faest_paramset_t* params,
                                   unsigned int start, unsigned int len) {

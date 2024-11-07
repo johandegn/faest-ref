@@ -36,12 +36,12 @@ static void recompute_hash_sign(vbb_t* vbb, unsigned int start, unsigned int end
   const unsigned int ellhat = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
   unsigned int capped_end   = MIN(end, lambda);
 
-  partial_vole_commit_cmo(vbb->root_key, vbb->iv, ellhat, start, capped_end,
-                          vole_mode_v(vbb->vole_cache), vbb->params);
+  partial_vole_commit_column(vbb->root_key, vbb->iv, ellhat, start, capped_end,
+                             vole_mode_v(vbb->vole_cache), vbb->params);
   vbb->cache_idx = start;
 }
 
-static void recompute_vole_rmo(vbb_t* vbb, unsigned int start, unsigned int len) {
+static void recompute_vole_row(vbb_t* vbb, unsigned int start, unsigned int len) {
   const unsigned int lambda = vbb->params->faest_param.lambda;
   const unsigned int ell    = vbb->params->faest_param.l;
   const unsigned int ellhat = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
@@ -55,7 +55,8 @@ static void recompute_vole_rmo(vbb_t* vbb, unsigned int start, unsigned int len)
     start = ell + lambda - len;
   }
 
-  partial_vole_commit(vbb->root_key, vbb->iv, ellhat, start, start+len, vbb->params, vbb->vole_cache);
+  partial_vole_commit_row(vbb->root_key, vbb->iv, ellhat, start, start + len, vbb->params,
+                          vbb->vole_cache);
   vbb->cache_idx = start;
 }
 
@@ -85,15 +86,14 @@ void init_vbb_sign(vbb_t* vbb, unsigned int len, const uint8_t* root_key, const 
 
   // Setup vk_buf if we are not in an EM variant
   if (!is_em_variant(vbb->params->faest_paramid)) {
-    // FIXME: do not initialize befor we initialize vk_cache..?
-    // FIXME: Could we not just reuse v_buf?
     vbb->vk_buf = malloc(lambda_bytes);
   }
-  
-  sign_vole_mode_ctx_t mode = vbb->full_size ? vole_mode_all_sign(vbb->vole_cache, vbb->vole_U, vbb->com_hash, c)
-                                    : vole_mode_u_hcom_c(vbb->vole_U, vbb->com_hash, c);
 
-  partial_vole_commit_cmo(vbb->root_key, vbb->iv, ellhat, 0, lambda, mode, vbb->params);
+  sign_vole_mode_ctx_t mode =
+      vbb->full_size ? vole_mode_all_sign(vbb->vole_cache, vbb->vole_U, vbb->com_hash, c)
+                     : vole_mode_u_hcom_c(vbb->vole_U, vbb->com_hash, c);
+
+  partial_vole_commit_column(vbb->root_key, vbb->iv, ellhat, 0, lambda, mode, vbb->params);
 }
 
 void prepare_hash_sign(vbb_t* vbb) {
@@ -108,9 +108,11 @@ void prepare_aes_sign(vbb_t* vbb) {
   if (vbb->full_size) {
     vbb->cache_idx = 0;
   } else {
-    recompute_vole_rmo(vbb, 0, vbb->row_count);
+    recompute_vole_row(vbb, 0, vbb->row_count);
   }
-  setup_vk_cache(vbb);
+  if (!is_em_variant(vbb->params->faest_paramid)) {
+    setup_vk_cache(vbb);
+  }
 }
 
 void vector_open_ondemand(vbb_t* vbb, unsigned int idx, const uint8_t* s_, uint8_t* sig_pdec,
@@ -127,13 +129,15 @@ void vector_open_ondemand(vbb_t* vbb, unsigned int idx, const uint8_t* s_, uint8
   free(expanded_keys);
 }
 
-static inline void apply_correction_values_cmo(vbb_t* vbb, unsigned int start, unsigned int len) {
+static inline void apply_correction_values_column(vbb_t* vbb, unsigned int start,
+                                                  unsigned int len) {
   const unsigned int lambda        = vbb->params->faest_param.lambda;
   const unsigned int ell           = vbb->params->faest_param.l;
   const unsigned int ell_hat       = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
   const unsigned int ell_hat_bytes = (ell_hat + 7) / 8;
   const unsigned int tau           = vbb->params->faest_param.tau;
   const unsigned int tau0          = vbb->params->faest_param.t0;
+  const unsigned int tau1          = vbb->params->faest_param.t1;
   const unsigned int k0            = vbb->params->faest_param.k0;
   const unsigned int k1            = vbb->params->faest_param.k1;
 
@@ -147,8 +151,7 @@ static inline void apply_correction_values_cmo(vbb_t* vbb, unsigned int start, u
       continue;
     }
     uint8_t delta[MAX_DEPTH];
-    ChalDec(chall3, i, vbb->params->faest_param.k0, vbb->params->faest_param.t0,
-            vbb->params->faest_param.k1, vbb->params->faest_param.t1, delta);
+    ChalDec(chall3, i, k0, tau0, k1, tau1, delta);
 
     for (unsigned int d = 0; d < depth; d++, col_idx++) {
       if (start > col_idx) {
@@ -190,13 +193,13 @@ static void recompute_hash_verify(vbb_t* vbb, unsigned int start, unsigned int l
   const uint8_t* com[MAX_TAU];
   setup_pdec_com(vbb, pdec, com);
 
-  partial_vole_reconstruct_cmo(vbb->iv, chall3, pdec, com, ell_hat, start, amount,
-                               vole_mode_q(vbb->vole_cache), vbb->params);
-  apply_correction_values_cmo(vbb, start, amount);
+  partial_vole_reconstruct_column(vbb->iv, chall3, pdec, com, ell_hat, start, amount,
+                                  vole_mode_q(vbb->vole_cache), vbb->params);
+  apply_correction_values_column(vbb, start, amount);
   vbb->cache_idx = start;
 }
 
-static void apply_correction_values_rmo(vbb_t* vbb, unsigned int start, unsigned int len) {
+static void apply_correction_values_row(vbb_t* vbb, unsigned int start, unsigned int len) {
   const unsigned int lambda        = vbb->params->faest_param.lambda;
   const unsigned int lambda_bytes  = lambda / 8;
   const unsigned int ell           = vbb->params->faest_param.l;
@@ -242,7 +245,7 @@ static void apply_correction_values_rmo(vbb_t* vbb, unsigned int start, unsigned
   }
 }
 
-static void apply_witness_values_rmo(vbb_t* vbb, unsigned int start, unsigned int len) {
+static void apply_witness_values_row(vbb_t* vbb, unsigned int start, unsigned int len) {
   const unsigned int lambda       = vbb->params->faest_param.lambda;
   const unsigned int lambda_bytes = lambda / 8;
   const unsigned int ell          = vbb->params->faest_param.l;
@@ -279,7 +282,7 @@ static void apply_witness_values_rmo(vbb_t* vbb, unsigned int start, unsigned in
   }
 }
 
-static void apply_witness_values_cmo(vbb_t* vbb) {
+static void apply_witness_values_column(vbb_t* vbb) {
   const unsigned int tau           = vbb->params->faest_param.tau;
   const unsigned int t0            = vbb->params->faest_param.t0;
   const unsigned int k0            = vbb->params->faest_param.k0;
@@ -305,7 +308,7 @@ static void apply_witness_values_cmo(vbb_t* vbb) {
   }
 }
 
-static void recompute_vole_rmo_reconstruct(vbb_t* vbb, unsigned int start, unsigned int len) {
+static void recompute_vole_row_reconstruct(vbb_t* vbb, unsigned int start, unsigned int len) {
   const unsigned int lambda  = vbb->params->faest_param.lambda;
   const unsigned int ell     = vbb->params->faest_param.l;
   const unsigned int ell_hat = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
@@ -323,10 +326,10 @@ static void recompute_vole_rmo_reconstruct(vbb_t* vbb, unsigned int start, unsig
   const uint8_t* pdec[MAX_TAU];
   const uint8_t* com[MAX_TAU];
   setup_pdec_com(vbb, pdec, com);
-  partial_vole_reconstruct_rmo(vbb->iv, chall3, pdec, com, vbb->vole_cache, ell_hat, vbb->params,
+  partial_vole_reconstruct_row(vbb->iv, chall3, pdec, com, vbb->vole_cache, ell_hat, vbb->params,
                                start, len);
-  apply_correction_values_rmo(vbb, start, len);
-  apply_witness_values_rmo(vbb, start, len);
+  apply_correction_values_row(vbb, start, len);
+  apply_witness_values_row(vbb, start, len);
   vbb->cache_idx = start;
 }
 
@@ -367,10 +370,10 @@ void init_vbb_verify(vbb_t* vbb, unsigned int len, const faest_paramset_t* param
   verify_vole_mode_ctx_t vole_mode = (vbb->full_size)
                                          ? vole_mode_all_verify(vbb->vole_cache, vbb->com_hash)
                                          : vole_mode_hcom(vbb->com_hash);
-  partial_vole_reconstruct_cmo(vbb->iv, chall3, pdec, com, ell_hat, 0, lambda, vole_mode,
-                               vbb->params);
+  partial_vole_reconstruct_column(vbb->iv, chall3, pdec, com, ell_hat, 0, lambda, vole_mode,
+                                  vbb->params);
   if (vbb->full_size) {
-    apply_correction_values_cmo(vbb, 0, lambda);
+    apply_correction_values_column(vbb, 0, lambda);
   }
 }
 
@@ -411,12 +414,14 @@ const uint8_t* get_dtilde(vbb_t* vbb, unsigned int idx) {
 
 void prepare_aes_verify(vbb_t* vbb) {
   if (vbb->full_size) {
-    apply_witness_values_cmo(vbb);
+    apply_witness_values_column(vbb);
     vbb->cache_idx = 0;
   } else {
-    recompute_vole_rmo_reconstruct(vbb, 0, vbb->row_count);
+    recompute_vole_row_reconstruct(vbb, 0, vbb->row_count);
   }
-  setup_vk_cache(vbb);
+  if (!is_em_variant(vbb->params->faest_paramid)) {
+    setup_vk_cache(vbb);
+  }
 }
 
 // Get voles for hashing
@@ -450,7 +455,7 @@ const uint8_t* get_vole_q_hash(vbb_t* vbb, unsigned int idx) {
   return vbb->vole_cache + offset * ell_hat_bytes;
 }
 
-static inline uint8_t* get_vole_rmo(vbb_t* vbb, unsigned int idx) {
+static inline uint8_t* get_vole_row(vbb_t* vbb, unsigned int idx) {
   unsigned int lambda       = vbb->params->faest_param.lambda;
   unsigned int lambda_bytes = lambda / 8;
 
@@ -458,10 +463,9 @@ static inline uint8_t* get_vole_rmo(vbb_t* vbb, unsigned int idx) {
   if (!is_row_cached(vbb, idx)) {
     unsigned int rmo_budget = vbb->row_count;
     if (vbb->party == VERIFIER) {
-      recompute_vole_rmo_reconstruct(vbb, idx, rmo_budget);
+      recompute_vole_row_reconstruct(vbb, idx, rmo_budget);
     } else {
-      printf("Trigger recomputation at %d\n", idx);
-      recompute_vole_rmo(vbb, idx, rmo_budget);
+      recompute_vole_row(vbb, idx, rmo_budget);
     }
   }
 
@@ -471,44 +475,22 @@ static inline uint8_t* get_vole_rmo(vbb_t* vbb, unsigned int idx) {
   memset(vbb->v_buf, 0, lambda_bytes);
   // Transpose the VOLE into the buffer
   for (unsigned int column = 0; column != lambda; ++column) {
-    ptr_set_bit(vbb->v_buf, ptr_get_bit(vbb->vole_cache, idx_relative + vbb->row_count * column), column);
+    ptr_set_bit(vbb->v_buf, ptr_get_bit(vbb->vole_cache, idx_relative + vbb->row_count * column),
+                column);
   }
   return vbb->v_buf;
-
-  /*
-  if (vbb->full_size) {
-    memset(vbb->v_buf, 0, lambda_bytes);
-    // Transpose on the fly into v_buf
-    for (unsigned int column = 0; column != lambda; ++column) {
-      ptr_set_bit(vbb->v_buf, ptr_get_bit(vbb->vole_cache + column * ellhat_bytes, idx), column);
-    }
-    return vbb->v_buf;
-  }
-
-  if (!is_row_cached(vbb, idx)) {
-    unsigned int rmo_budget = vbb->row_count;
-    if (vbb->party == VERIFIER) {
-      recompute_vole_rmo_reconstruct(vbb, idx, rmo_budget);
-    } else {
-      recompute_vole_rmo(vbb, idx, rmo_budget);
-    }
-  }
-
-  unsigned int offset = (idx - vbb->cache_idx) * lambda_bytes;
-  return vbb->vole_cache + offset;
-  */
 }
 
 const bf256_t* get_vole_v_256(vbb_t* vbb, unsigned int idx) {
-  return (bf256_t*)get_vole_rmo(vbb, idx);
+  return (bf256_t*)get_vole_row(vbb, idx);
 }
 
 const bf192_t* get_vole_v_192(vbb_t* vbb, unsigned int idx) {
-  return (bf192_t*)get_vole_rmo(vbb, idx);
+  return (bf192_t*)get_vole_row(vbb, idx);
 }
 
 const bf128_t* get_vole_v_128(vbb_t* vbb, unsigned int idx) {
-  return (bf128_t*)get_vole_rmo(vbb, idx);
+  return (bf128_t*)get_vole_row(vbb, idx);
 }
 
 const uint8_t* get_vole_u(vbb_t* vbb) {
@@ -523,10 +505,7 @@ void clean_vbb(vbb_t* vbb) {
   free(vbb->vole_cache);
   free(vbb->com_hash);
 
-  // FIXME: v_buf is always allocated...
-  if (vbb->full_size) {
-    free(vbb->v_buf);
-  }
+  free(vbb->v_buf);
 
   if (vbb->party == VERIFIER) {
     free(vbb->Dtilde_buf);
@@ -537,7 +516,6 @@ void clean_vbb(vbb_t* vbb) {
   // V_k cache
   if (!is_em_variant(vbb->params->faest_paramid)) {
     free(vbb->vk_buf);
-    // FIXME: We always allocate and use vbb->vk_cache. Let this stay, but only allocate and use if not full size.
     if (!vbb->full_size) {
       free(vbb->vk_cache);
     }
@@ -548,22 +526,31 @@ void clean_vbb(vbb_t* vbb) {
 
 static void setup_vk_cache(vbb_t* vbb) {
   unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
-  // FIXME: Move this check outside the function
-  if (is_em_variant(vbb->params->faest_paramid)) {
+  unsigned int l_ke         = vbb->params->faest_param.Lke;
+
+  // If full_size, then there is no cache
+  if (vbb->full_size) {
     return;
   }
 
-  vbb->vk_cache = calloc(vbb->params->faest_param.Lke, lambda_bytes);
+  vbb->vk_cache = calloc(l_ke, lambda_bytes);
 
-  for (unsigned int i = 0; i < vbb->params->faest_param.Lke; i++) {
+  for (unsigned int i = 0; i < l_ke; i++) {
     unsigned int offset = i * lambda_bytes;
-    memcpy(vbb->vk_cache + offset, get_vole_rmo(vbb, i), lambda_bytes);
+    memcpy(vbb->vk_cache + offset, get_vole_row(vbb, i), lambda_bytes);
   }
 }
 
 static inline uint8_t* get_vk(vbb_t* vbb, unsigned int idx) {
+  unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
   assert(idx < vbb->params->faest_param.Lke);
-  unsigned int offset = idx * (vbb->params->faest_param.lambda / 8);
+
+  // If full_size then cache is not needed nor initialized
+  if (vbb->full_size) {
+    return get_vole_row(vbb, idx);
+  }
+
+  unsigned int offset = idx * lambda_bytes;
   return (vbb->vk_cache + offset);
 }
 
