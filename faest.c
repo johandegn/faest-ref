@@ -16,11 +16,6 @@
 #include "universal_hashing.h"
 #include "vbb.h"
 
-// TODO remove includes
-#include <string.h>
-#include <stdio.h>
-#include "util.h"
-
 // helpers to compute position in signature (sign)
 
 ATTR_PURE static inline uint8_t* signature_c(uint8_t* base_ptr, unsigned int index,
@@ -280,9 +275,8 @@ void faest_sign(uint8_t* sig, const uint8_t* msg, size_t msglen, const uint8_t* 
   }
 
   vbb_t vbb;
-  // TODO: find a solution for setting argument (dynamic or static)?
   init_vbb_sign(&vbb, ell_hat, rootkey, signature_iv(sig, params), signature_c(sig, 0, params),
-                 params);
+                params);
 
   uint8_t chall_1[(5 * MAX_LAMBDA_BYTES) + 8];
   hash_challenge_1(chall_1, mu, get_com_hash(&vbb), signature_c(sig, 0, params),
