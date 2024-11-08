@@ -327,9 +327,7 @@ void faest_sign_masked(uint8_t* sig, const uint8_t* msg, size_t msglen, const ui
   uint8_t* vk_cache      = NULL;
   if (!(params->faest_paramid > 6)) {
     vk_buf        = alloca(lambdaBytes);
-    if (len < ell_hat){
-      vk_cache      = alloca(params->faest_param.Lke * lambdaBytes);
-    }
+    vk_cache      = alloca(params->faest_param.Lke * lambdaBytes);
   }
   init_stack_allocations_sign(&vbb, hcom, u, v_cache, v_buf, vk_buf, vk_cache);
   init_vbb_sign(&vbb, len, rootkey, signature_iv(sig, params), signature_c(sig, 0, params), params);
