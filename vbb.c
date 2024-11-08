@@ -505,27 +505,18 @@ const uint8_t* get_com_hash(vbb_t* vbb) {
 // V_k cache
 
 void add_vole_to_vk_cache(vbb_t* vbb, unsigned int idx, bf128_t* vole){
-  if(vbb->full_size){
-    return;
-  }
   unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
   unsigned int offset = idx * lambda_bytes;
   memcpy(vbb->vk_cache + offset, vole, lambda_bytes);
 }
 
 void add_vole_to_vk_cache_192(vbb_t* vbb, unsigned int idx, bf192_t* vole){
-  if(vbb->full_size){
-    return;
-  }
   unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
   unsigned int offset = idx * lambda_bytes;
   memcpy(vbb->vk_cache + offset, vole, lambda_bytes);
 }
 
 void add_vole_to_vk_cache_256(vbb_t* vbb, unsigned int idx, bf256_t* vole){
-  if(vbb->full_size){
-    return;
-  }
   unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
   unsigned int offset = idx * lambda_bytes;
   memcpy(vbb->vk_cache + offset, vole, lambda_bytes);
@@ -534,10 +525,6 @@ void add_vole_to_vk_cache_256(vbb_t* vbb, unsigned int idx, bf256_t* vole){
 static void setup_vk_cache(vbb_t* vbb) {
   unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
 
-  // If full_size, then there is no cache
-  if (vbb->full_size) {
-    return;
-  }
   for (unsigned int i = 0; i < vbb->params->faest_param.lambda; i++) {
     unsigned int offset = i * lambda_bytes;
     memcpy(vbb->vk_cache + offset, get_vole_row(vbb, i), lambda_bytes);
@@ -547,11 +534,6 @@ static void setup_vk_cache(vbb_t* vbb) {
 static inline uint8_t* get_vk(vbb_t* vbb, unsigned int idx) {
   unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
   assert(idx < vbb->params->faest_param.Lke);
-
-  // If full_size then cache is not needed nor initialized
-  if (vbb->full_size) {
-    return get_vole_row(vbb, idx);
-  }
 
   unsigned int offset = idx * lambda_bytes;
   return (vbb->vk_cache + offset);
