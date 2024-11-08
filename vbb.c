@@ -516,9 +516,7 @@ void clean_vbb(vbb_t* vbb) {
   // V_k cache
   if (!is_em_variant(vbb->params->faest_paramid)) {
     free(vbb->vk_buf);
-    if (!vbb->full_size) {
-      free(vbb->vk_cache);
-    }
+    free(vbb->vk_cache);
   }
 }
 
@@ -527,11 +525,6 @@ void clean_vbb(vbb_t* vbb) {
 static void setup_vk_cache(vbb_t* vbb) {
   unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
   unsigned int l_ke         = vbb->params->faest_param.Lke;
-
-  // If full_size, then there is no cache
-  if (vbb->full_size) {
-    return;
-  }
 
   vbb->vk_cache = calloc(l_ke, lambda_bytes);
 
@@ -544,11 +537,6 @@ static void setup_vk_cache(vbb_t* vbb) {
 static inline uint8_t* get_vk(vbb_t* vbb, unsigned int idx) {
   unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
   assert(idx < vbb->params->faest_param.Lke);
-
-  // If full_size then cache is not needed nor initialized
-  if (vbb->full_size) {
-    return get_vole_row(vbb, idx);
-  }
 
   unsigned int offset = idx * lambda_bytes;
   return (vbb->vk_cache + offset);
