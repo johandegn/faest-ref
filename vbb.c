@@ -641,18 +641,10 @@ void setup_mask_storage(vbb_t* vbb, uint8_t* vk_mask, uint8_t* v_mask, uint8_t* 
   const unsigned int ellhat      = vbb->params->faest_param.l + lambda * 2 + UNIVERSAL_HASH_B_BITS;
 
   // Vk masking
-  if (!vbb->full_size){
-    vbb->vk_mask_cache = vk_mask;//malloc(vbb->params->faest_param.Lke * lambdaBytes);
-    for (unsigned int i = 0; i < vbb->params->faest_param.Lke * lambda / 8; i++) {
-      rand_mask(vbb->vk_mask_cache + i, 1);
-    }
-    for (unsigned int i = 0; i < vbb->params->faest_param.Lke * lambda / 8; i++) {
-      vbb->vk_cache[i] ^= vbb->vk_mask_cache[i];
-    }
-  }
+  vbb->vk_mask_cache = vk_mask;
 
   // Vole masking
-  vbb->v_mask_cache = v_mask;//malloc(ellhat * lambdaBytes);
+  vbb->v_mask_cache = v_mask;
   for (unsigned int i = 0; i < ellhat * lambdaBytes; i++) {
     rand_mask(vbb->v_mask_cache + i, 1);
   }
@@ -660,7 +652,7 @@ void setup_mask_storage(vbb_t* vbb, uint8_t* vk_mask, uint8_t* v_mask, uint8_t* 
     vbb->vole_cache[i] ^= vbb->v_mask_cache[i];
   }
 
-  vbb->u_mask_cache = u_mask;//malloc(ellhat / 8);
+  vbb->u_mask_cache = u_mask;
   for (unsigned int i = 0; i < ellhat / 8; i++) {
     rand_mask(vbb->u_mask_cache + i, 1);
   }
@@ -708,12 +700,10 @@ void prepare_aes_sign_share(vbb_t* vbb) {
   }
   setup_vk_cache(vbb);
 
-  if(!vbb->full_size){
-    const unsigned int lambda       = vbb->params->faest_param.lambda;
-    const unsigned int lambda_bytes = lambda / 8;
-    for (unsigned int i = 0; i < lambda; i++) {
-      memcpy(vbb->vk_mask_cache + i * lambda_bytes, get_vole_aes_128_share(vbb, i, 1), lambda_bytes);
-    }
+  const unsigned int lambda       = vbb->params->faest_param.lambda;
+  const unsigned int lambda_bytes = lambda / 8;
+  for (unsigned int i = 0; i < lambda; i++) {
+    memcpy(vbb->vk_mask_cache + i * lambda_bytes, get_vole_aes_128_share(vbb, i, 1), lambda_bytes);
   }
 }
 
@@ -747,10 +737,10 @@ const uint8_t* get_vole_u_share(vbb_t* vbb, unsigned int share) {
 
 const bf128_t* get_vk_128_share(vbb_t* vbb, unsigned int idx, unsigned int share) {
   if (share == 1) {
-    uint8_t* tmp      = vbb->vole_cache;
-    vbb->vole_cache     = vbb->v_mask_cache;
+    uint8_t* tmp      = vbb->vk_cache;
+    vbb->vk_cache     = vbb->vk_mask_cache;
     const bf128_t* vk = get_vk_128(vbb, idx);
-    vbb->vole_cache     = tmp;
+    vbb->vk_cache     = tmp;
     return vk;
   } else {
     return get_vk_128(vbb, idx);
@@ -758,9 +748,6 @@ const bf128_t* get_vk_128_share(vbb_t* vbb, unsigned int idx, unsigned int share
 }
 
 void add_vole_to_vk_cache_share(vbb_t* vbb, unsigned int idx, bf128_t* VOLE, unsigned int share){
-  if(vbb->full_size){
-    return;
-  }
   const unsigned int lambda       = vbb->params->faest_param.lambda;
   const unsigned int lambda_bytes = lambda / 8;
   unsigned int offset = idx * lambda_bytes;
