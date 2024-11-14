@@ -31,79 +31,6 @@ static void H0(const uint8_t* node, uint32_t lambda, const uint8_t* iv, uint8_t*
   H0_final(&h0_ctx, sd, lambda_bytes, com, (lambda_bytes * 2));
 }
 
-// index is the index i for (sd_i, com_i)
-void get_sd_com(vec_com_t* vec_com, const uint8_t* iv, uint32_t lambda, unsigned int index,
-                uint8_t* sd, uint8_t* com) {
-  const unsigned int lambda_bytes = lambda / 8;
-  const unsigned int depth        = vec_com->depth;
-
-  uint8_t* children = alloca(lambda_bytes * 2);
-  uint8_t* l_child  = children;
-  uint8_t* r_child  = l_child + lambda_bytes;
-
-  size_t lo         = 0;
-  size_t leaf_count = (1 << depth);
-  size_t hi         = leaf_count - 1;
-  size_t center;
-
-  // Find starting point from path memory
-  size_t i                = 0;
-  unsigned int path_index = vec_com->path.index;
-  uint8_t* path_nodes     = vec_com->path.nodes;
-  if (path_nodes != NULL && !vec_com->path.empty) {
-    for (; i < depth;) {
-      i++;
-      center = (hi - lo) / 2 + lo;
-      if (index <= center) { // Left
-        hi = center;
-        if (path_index > center)
-          break;
-      } else { // Right
-        lo = center + 1;
-        if (path_index < center + 1)
-          break;
-      }
-    }
-  }
-
-  // Set starting node
-  uint8_t* node;
-  if (i > 0) {
-    node = path_nodes + (i - 1) * lambda_bytes * 2;
-    // if last node was right child
-    if (hi != center) {
-      node += lambda_bytes;
-    }
-  } else {
-    node = vec_com->rootKey;
-  }
-
-  // Continue computing until leaf is reached
-  for (; i < depth; i++) {
-    prg(node, iv, children, lambda, lambda_bytes * 2);
-
-    center = (hi - lo) / 2 + lo;
-    if (index <= center) { // Left
-      node = l_child;
-      hi   = center;
-    } else { // Right
-      node = r_child;
-      lo   = center + 1;
-    }
-    if (path_nodes != NULL) {
-      memcpy(path_nodes + i * lambda_bytes * 2, node, lambda_bytes * 2);
-    }
-  }
-
-  if (path_nodes != NULL) {
-    vec_com->path.index = index;
-    vec_com->path.empty = false;
-  }
-
-  H0(node, lambda, iv, sd, com);
-  // free(children);
-}
-
 void vector_commitment(const uint8_t* rootKey, uint32_t lambda, uint32_t depth, uint8_t* path_nodes,
                        vec_com_t* vec_com) {
   const unsigned int lambda_bytes = lambda / 8;
@@ -221,7 +148,6 @@ void extract_sd_com(vec_com_t* vec_com, const uint8_t* iv, uint32_t lambda, unsi
   }
 
   H0(node, lambda, iv, sd, com);
-  //free(children);
 }
 
 void extract_sd_com_rec(vec_com_rec_t* vec_com_rec, const uint8_t* iv, uint32_t lambda,
@@ -300,8 +226,8 @@ void extract_sd_com_rec(vec_com_rec_t* vec_com_rec, const uint8_t* iv, uint32_t 
       memcpy(path_nodes + i * lambda_bytes, node, lambda_bytes);
   }
 
+  // FIXME: vec_com_rec->path.empty never set to false
   vec_com_rec->path.index = index;
 
   H0(node, lambda, iv, sd, com);
-  //free(children);
 }
