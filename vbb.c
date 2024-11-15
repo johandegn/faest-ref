@@ -144,11 +144,15 @@ static inline void apply_correction_values_column(vbb_t* vbb, unsigned int start
   const uint8_t* chall3 = dsignature_chall_3(vbb->sig, vbb->params);
   const uint8_t* c      = dsignature_c(vbb->sig, 0, vbb->params);
   unsigned int col_idx  = k0;
+  vbb->cache_idx = start;
   for (unsigned int i = 1; i < tau; i++) {
     const unsigned int depth = i < tau0 ? k0 : k1;
     if (start >= col_idx + depth) {
       col_idx += depth;
       continue;
+    }
+    if (col_idx >= start + len) {
+      break;
     }
     uint8_t delta[MAX_DEPTH];
     ChalDec(chall3, i, k0, tau0, k1, tau1, delta);
@@ -162,15 +166,10 @@ static inline void apply_correction_values_column(vbb_t* vbb, unsigned int start
           vbb->vole_cache + (col_idx - start) * ell_hat_bytes, delta[d], ell_hat_bytes);
 
       if (col_idx + 1 >= start + len) {
-        col_idx++;
-        break;
+        return;
       }
     }
-    if (col_idx >= start + len) {
-      break;
-    }
   }
-  vbb->cache_idx = start;
 }
 
 static void setup_pdec_com(vbb_t* vbb, const uint8_t** pdec, const uint8_t** com) {
@@ -207,42 +206,79 @@ static void apply_correction_values_row(vbb_t* vbb, unsigned int start, unsigned
   const unsigned int ell_hat       = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
   const unsigned int ell_hat_bytes = ell_hat / 8;
   const unsigned int tau0          = vbb->params->faest_param.t0;
+  const unsigned int tau1          = vbb->params->faest_param.t1;
   const unsigned int k0            = vbb->params->faest_param.k0;
   const unsigned int k1            = vbb->params->faest_param.k1;
   const uint8_t* chall3            = dsignature_chall_3(vbb->sig, vbb->params);
   const uint8_t* c                 = dsignature_c(vbb->sig, 0, vbb->params);
-  uint8_t buf[MAX_LAMBDA_BYTES]    = {0};
-  for (unsigned int row_idx = 0; row_idx < len; row_idx++) {
-    memset(buf, 0, sizeof(buf));
-    uint8_t packed_byte      = 0;
-    unsigned int bit_counter = k0;
+  const unsigned int len_bytes = (len + 7) / 8;
 
-    for (unsigned int t = 1; t < tau; t++) {
-      unsigned int depth   = t < tau0 ? k0 : k1;
-      const uint8_t* c_idx = c + (t - 1) * ell_hat_bytes;
+  uint8_t* c_trunc      = malloc(len_bytes);
+  uint8_t* c_trunc_mask = malloc(len_bytes);
+  
+  unsigned long col_idx  = k0;
+  for (unsigned int i = 1; i < tau; i++) {
+    const unsigned int depth = i < tau0 ? k0 : k1;
 
-      unsigned int abs_idx = row_idx + start;
-      unsigned int c_byte  = abs_idx / 8;
-      unsigned int c_bit   = abs_idx % 8;
-      uint8_t bit          = c_idx[c_byte] >> c_bit & 1;
+    uint8_t delta[MAX_DEPTH];
+    ChalDec(chall3, i, k0, tau0, k1, tau1, delta);
+    // Make a c_trunc
+    const uint8_t* c_ptr = c + (i - 1) * ell_hat_bytes;
 
-      for (unsigned int i = 0; i < depth; i++) {
-        packed_byte = packed_byte >> 1;
-        packed_byte |= (bit << 7);
-        bit_counter++;
-        if (bit_counter % 8 == 0) {
-          buf[bit_counter / 8 - 1] = packed_byte;
-          packed_byte              = 0;
-        }
+    unsigned int bit_offset = start % 8;
+    unsigned int start_byte = start / 8;
+    // If aligned, copy over
+    if (bit_offset == 0) {
+      memcpy(c_trunc, c_ptr + start_byte, len_bytes);
+    } else { // If not aligned
+      for (unsigned int j = 0; j < len_bytes; j++) {
+        c_trunc[j] =
+            (c_ptr[start_byte + j] >> bit_offset) | (c_ptr[start_byte + j + 1] << (8 - bit_offset));
+      }
+      // Get last part
+      c_trunc[len_bytes - 1] = (c_ptr[start_byte + len_bytes - 1] >> bit_offset);
+      unsigned int rest      = len - (len_bytes - 1) * 8;
+      if (rest > 8 - bit_offset) {
+        // Get extra part
+        c_trunc[len_bytes - 1] |= c_ptr[start_byte + len_bytes] << (8 - bit_offset);
       }
     }
+    // Clear final bits
+    unsigned int bits_to_clear = (8 - (len % 8)) % 8;
+    c_trunc[len_bytes - 1] &= (uint8_t)0xFF >> bits_to_clear;
 
-    // AND buf with Delta
-    for (unsigned int i = 0; i < lambda_bytes; i++) {
-      buf[i] &= chall3[i];
-      vbb->vole_cache[row_idx * lambda_bytes + i] ^= buf[i];
+    for (unsigned int d = 0; d < depth; d++) {
+      // TODO: if delta[d] == 0 continue; else mask = 0xFF
+      uint8_t mask = -(delta[d] & 1);
+      for(unsigned int k = 0; k < len_bytes; k++) {
+        c_trunc_mask[k] = c_trunc[k] & mask;
+      }
+
+      uint8_t* q = vbb->vole_cache;
+      
+      // Shift offset and XOR into v
+      unsigned long row_bit_index   = (unsigned long)len * (col_idx);
+      unsigned long row_bit_offset  = row_bit_index % 8;
+      unsigned long row_byte_offset = row_bit_index / 8;
+      // Apply first byte
+      q[row_byte_offset] ^= c_trunc_mask[0] << row_bit_offset;
+      // Apply the remaining
+      for (unsigned int k = 1; k < len_bytes; k++) {
+        q[row_byte_offset + k] ^=
+            (c_trunc_mask[k - 1] >> (8 - row_bit_offset)) | (c_trunc_mask[k] << row_bit_offset);
+      }
+
+      if (row_bit_offset != 0) {
+        q[row_byte_offset + len_bytes] ^= c_trunc_mask[len_bytes - 1] >> (8 - row_bit_offset);
+      }
+      col_idx++;
     }
+
   }
+  free(c_trunc);
+  free(c_trunc_mask);
+
+  vbb->cache_idx = start;
 }
 
 static void apply_witness_values_row(vbb_t* vbb, unsigned int start, unsigned int len) {
@@ -254,32 +290,77 @@ static void apply_witness_values_row(vbb_t* vbb, unsigned int start, unsigned in
   const unsigned int tau1         = vbb->params->faest_param.t1;
   const unsigned int k0           = vbb->params->faest_param.k0;
   const unsigned int k1           = vbb->params->faest_param.k1;
-  const uint8_t* d                = dsignature_d(vbb->sig, vbb->params);
-  unsigned int full_col_idx       = 0;
-  unsigned int end_row_idx        = MIN(len, ell - start);
+  const uint8_t* d_ptr            = dsignature_d(vbb->sig, vbb->params);
+  const uint8_t* chall3           = dsignature_chall_3(vbb->sig, vbb->params);
+  unsigned int col_idx            = 0;
+  unsigned int effective_len      = MIN(len, ell - start);
   uint8_t delta[MAX_DEPTH];
 
-  for (unsigned int i = 0; i < tau; i++) {
-    unsigned int depth = i < tau0 ? k0 : k1;
-    ChalDec(dsignature_chall_3(vbb->sig, vbb->params), i, k0, tau0, k1, tau1, delta);
-    for (unsigned int col_idx = 0; col_idx < depth; col_idx++) {
-      uint8_t delta_i = delta[col_idx];
-      if (delta_i == 0) {
-        continue;
-      }
-      for (unsigned int row_idx = 0; row_idx < end_row_idx; row_idx++) {
-        unsigned int q_byte = (full_col_idx + col_idx) / 8;
-        unsigned int d_byte = (row_idx + start) / 8;
-        unsigned int d_bit  = (row_idx + start) % 8;
-        uint8_t bit         = d[d_byte] >> d_bit & 1;
-        if (bit == 0) {
-          continue;
-        }
-        vbb->vole_cache[row_idx * lambda_bytes + q_byte] ^= bit << (full_col_idx + col_idx) % 8;
-      }
-    }
-    full_col_idx += depth;
+  if(start >= ell){
+    return;
   }
+  
+  // Make d_trunc
+  const unsigned int len_bytes  = (effective_len + 7) / 8;
+  uint8_t* d_trunc              = malloc(len_bytes);
+  uint8_t* d_trunc_mask         = malloc(len_bytes);
+
+  unsigned int bit_offset = start % 8;
+  unsigned int start_byte = start / 8;
+  // If aligned, copy over
+  if (bit_offset == 0) {
+    memcpy(d_trunc, d_ptr + start_byte, len_bytes);
+  } else { // If not aligned
+    for (unsigned int j = 0; j < len_bytes; j++) {
+      d_trunc[j] =
+          (d_ptr[start_byte + j] >> bit_offset) | (d_ptr[start_byte + j + 1] << (8 - bit_offset));
+    }
+    // Get last part
+    d_trunc[len_bytes - 1] = (d_ptr[start_byte + len_bytes - 1] >> bit_offset);
+    unsigned int rest      = effective_len - (len_bytes - 1) * 8;
+    if (rest > 8 - bit_offset) {
+      // Get extra part
+      d_trunc[len_bytes - 1] |= d_ptr[start_byte + len_bytes] << (8 - bit_offset);
+    }
+  }
+  // Clear final bits
+  unsigned int bits_to_clear = (8 - (effective_len % 8)) % 8;
+  d_trunc[len_bytes - 1] &= (uint8_t)0xFF >> bits_to_clear;
+
+  for (unsigned int t = 0; t < tau; t++) {
+    unsigned int depth = t < tau0 ? k0 : k1;
+    ChalDec(chall3, t, k0, tau0, k1, tau1, delta);
+
+    for (unsigned int d = 0; d < depth; d++) {
+      // Mul d_truct with delta[d] store in d_trunc_mask
+      uint8_t mask = -(delta[d] & 1);
+      for(unsigned int k = 0; k < len_bytes; k++) {
+        d_trunc_mask[k] = d_trunc[k] & mask;
+      }
+
+      // Apply the d_trunc_mask to the vole_cache
+      uint8_t* q = vbb->vole_cache;
+      
+      // Shift offset and XOR into v
+      unsigned long row_bit_index   = (unsigned long)len * (col_idx);
+      unsigned long row_bit_offset  = row_bit_index % 8;
+      unsigned long row_byte_offset = row_bit_index / 8;
+      // Apply first byte
+      q[row_byte_offset] ^= d_trunc_mask[0] << row_bit_offset;
+      // Apply the remaining
+      for (unsigned int k = 1; k < len_bytes; k++) {
+        q[row_byte_offset + k] ^=
+            (d_trunc_mask[k - 1] >> (8 - row_bit_offset)) | (d_trunc_mask[k] << row_bit_offset);
+      }
+
+      if (row_bit_offset != 0) {
+        q[row_byte_offset + len_bytes] ^= d_trunc_mask[len_bytes - 1] >> (8 - row_bit_offset);
+      }
+      col_idx++;
+    }
+  }
+  free(d_trunc);
+  free(d_trunc_mask);
 }
 
 static void apply_witness_values_column(vbb_t* vbb) {
@@ -330,6 +411,7 @@ static void recompute_vole_row_reconstruct(vbb_t* vbb, unsigned int start, unsig
                                start, len);
   apply_correction_values_row(vbb, start, len);
   apply_witness_values_row(vbb, start, len);
+  
   vbb->cache_idx = start;
 }
 
@@ -436,8 +518,8 @@ const uint8_t* get_vole_v_hash(vbb_t* vbb, unsigned int idx) {
     unsigned int cmo_budget = vbb->column_count;
     recompute_hash_sign(vbb, idx, idx + cmo_budget);
   }
+  
   const unsigned int offset = idx - vbb->cache_idx;
-
   return vbb->vole_cache + offset * ell_hat_bytes;
 }
 
@@ -452,7 +534,7 @@ const uint8_t* get_vole_q_hash(vbb_t* vbb, unsigned int idx) {
     recompute_hash_verify(vbb, idx, cmo_budget);
   }
 
-  unsigned int offset = idx - vbb->cache_idx;
+  const unsigned int offset = idx - vbb->cache_idx;
   return vbb->vole_cache + offset * ell_hat_bytes;
 }
 
