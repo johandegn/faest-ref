@@ -200,7 +200,6 @@ static void recompute_hash_verify(vbb_t* vbb, unsigned int start, unsigned int l
 
 static void apply_correction_values_row(vbb_t* vbb, unsigned int start, unsigned int len) {
   const unsigned int lambda        = vbb->params->faest_param.lambda;
-  const unsigned int lambda_bytes  = lambda / 8;
   const unsigned int ell           = vbb->params->faest_param.l;
   const unsigned int tau           = vbb->params->faest_param.tau;
   const unsigned int ell_hat       = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
@@ -282,8 +281,6 @@ static void apply_correction_values_row(vbb_t* vbb, unsigned int start, unsigned
 }
 
 static void apply_witness_values_row(vbb_t* vbb, unsigned int start, unsigned int len) {
-  const unsigned int lambda       = vbb->params->faest_param.lambda;
-  const unsigned int lambda_bytes = lambda / 8;
   const unsigned int ell          = vbb->params->faest_param.l;
   const unsigned int tau          = vbb->params->faest_param.tau;
   const unsigned int tau0         = vbb->params->faest_param.t0;
