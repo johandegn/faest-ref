@@ -391,8 +391,6 @@ void partial_vole_reconstruct_row(const uint8_t* iv, const uint8_t* chall,
   unsigned int k0           = params->faest_param.k0;
   unsigned int k1           = params->faest_param.k1;
 
-  unsigned int end = start + len;
-
   unsigned int len_bytes = (len + 7) / 8;
 
   unsigned int max_depth = MAX(k0, k1);
