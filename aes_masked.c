@@ -69,9 +69,8 @@ static void sub_words_masked(bf8_t* words) {
   }
 }
 
-void expand_128key_masked(aes_round_keys_t* round_keys_share, const uint8_t* key_share,
-                          unsigned int key_words, unsigned int block_words,
-                          unsigned int num_rounds) {
+void copy_first_round_key(aes_round_keys_t* round_keys_share, const uint8_t* key_share,
+                          unsigned int key_words, unsigned int block_words) {
   for (unsigned int k = 0; k < key_words; k++) {
     round_keys_share[0].round_keys[k / block_words][k % block_words][0] =
         bf8_load(&key_share[4 * k]);
@@ -82,52 +81,50 @@ void expand_128key_masked(aes_round_keys_t* round_keys_share, const uint8_t* key
     round_keys_share[0].round_keys[k / block_words][k % block_words][3] =
         bf8_load(&key_share[(4 * k) + 3]);
   }
-  for (unsigned int k = 0; k < key_words; k++) {
-    round_keys_share[1].round_keys[k / block_words][k % block_words][0] =
-        bf8_load(&key_share[4 * k + MAX_LAMBDA_BYTES]);
-    round_keys_share[1].round_keys[k / block_words][k % block_words][1] =
-        bf8_load(&key_share[(4 * k) + 1 + MAX_LAMBDA_BYTES]);
-    round_keys_share[1].round_keys[k / block_words][k % block_words][2] =
-        bf8_load(&key_share[(4 * k) + 2 + MAX_LAMBDA_BYTES]);
-    round_keys_share[1].round_keys[k / block_words][k % block_words][3] =
-        bf8_load(&key_share[(4 * k) + 3 + MAX_LAMBDA_BYTES]);
+}
+
+void setup_round_key_tmp(bf8_t* tmp_share, aes_round_keys_t* round_keys_share, unsigned int k, 
+                         unsigned int key_words, unsigned int block_words){
+  for (int i = 0; i < AES_NR; i++){
+      tmp_share[i] = round_keys_share[0].round_keys[(k - 1) / block_words][(k - 1) % block_words][i];
   }
+  if (k % key_words == 0){
+    rot_word(tmp_share);
+  }
+}
+
+void finalize_round_key(aes_round_keys_t* round_keys_share, unsigned int k, unsigned int key_words,
+                        bf8_t* tmp_share, unsigned int block_words){
+  unsigned int m = k - key_words;
+  round_keys_share[0].round_keys[k / block_words][k % block_words][0] =
+      round_keys_share[0].round_keys[m / block_words][m % block_words][0] ^ tmp_share[0];
+  round_keys_share[0].round_keys[k / block_words][k % block_words][1] =
+      round_keys_share[0].round_keys[m / block_words][m % block_words][1] ^ tmp_share[1];
+  round_keys_share[0].round_keys[k / block_words][k % block_words][2] =
+      round_keys_share[0].round_keys[m / block_words][m % block_words][2] ^ tmp_share[2];
+  round_keys_share[0].round_keys[k / block_words][k % block_words][3] =
+      round_keys_share[0].round_keys[m / block_words][m % block_words][3] ^ tmp_share[3];
+}
+
+void expand_128key_masked(aes_round_keys_t* round_keys_share, const uint8_t* key_share,
+                          unsigned int key_words, unsigned int block_words,
+                          unsigned int num_rounds) {
+  
+  copy_first_round_key(round_keys_share, key_share, key_words, block_words);
+  copy_first_round_key(round_keys_share + 1, key_share + MAX_LAMBDA_BYTES, key_words, block_words);
 
   for (unsigned int k = key_words; k < block_words * (num_rounds + 1); ++k) {
     bf8_t tmp_share[2][AES_NR];
-    for (int i = 0; i < AES_NR; i++){
-      tmp_share[0][i] = round_keys_share[0].round_keys[(k - 1) / block_words][(k - 1) % block_words][i];
-    }
-    for (int i = 0; i < AES_NR; i++){
-      tmp_share[1][i] = round_keys_share[1].round_keys[(k - 1) / block_words][(k - 1) % block_words][i];
-    }
+    setup_round_key_tmp(&tmp_share[0][0], round_keys_share, k, key_words, block_words);
+    setup_round_key_tmp(&tmp_share[1][0], round_keys_share + 1, k, key_words, block_words);
+    
     if (k % key_words == 0) {
-      rot_word(tmp_share[0]);
-      rot_word(tmp_share[1]);
       sub_words_masked(&tmp_share[0][0]);
       tmp_share[0][0] ^= round_constants((k / key_words) - 1);
     }
 
-    if (key_words > 6 && (k % key_words) == 4) {
-      sub_words_masked(&tmp_share[0][0]);
-    }
-    unsigned int m = k - key_words;
-    round_keys_share[0].round_keys[k / block_words][k % block_words][0] =
-        round_keys_share[0].round_keys[m / block_words][m % block_words][0] ^ tmp_share[0][0];
-    round_keys_share[0].round_keys[k / block_words][k % block_words][1] =
-        round_keys_share[0].round_keys[m / block_words][m % block_words][1] ^ tmp_share[0][1];
-    round_keys_share[0].round_keys[k / block_words][k % block_words][2] =
-        round_keys_share[0].round_keys[m / block_words][m % block_words][2] ^ tmp_share[0][2];
-    round_keys_share[0].round_keys[k / block_words][k % block_words][3] =
-        round_keys_share[0].round_keys[m / block_words][m % block_words][3] ^ tmp_share[0][3];
-    round_keys_share[1].round_keys[k / block_words][k % block_words][0] =
-        round_keys_share[1].round_keys[m / block_words][m % block_words][0] ^ tmp_share[1][0];
-    round_keys_share[1].round_keys[k / block_words][k % block_words][1] =
-        round_keys_share[1].round_keys[m / block_words][m % block_words][1] ^ tmp_share[1][1];
-    round_keys_share[1].round_keys[k / block_words][k % block_words][2] =
-        round_keys_share[1].round_keys[m / block_words][m % block_words][2] ^ tmp_share[1][2];
-    round_keys_share[1].round_keys[k / block_words][k % block_words][3] =
-        round_keys_share[1].round_keys[m / block_words][m % block_words][3] ^ tmp_share[1][3];
+    finalize_round_key(round_keys_share, k, key_words, &tmp_share[0][0], block_words);
+    finalize_round_key(round_keys_share + 1, k, key_words, &tmp_share[1][0] , block_words);
   }
 }
 
