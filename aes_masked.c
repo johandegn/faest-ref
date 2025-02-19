@@ -18,39 +18,29 @@
 #define RIJNDAEL_BLOCK_WORDS_192 6
 #define RIJNDAEL_BLOCK_WORDS_256 8
 
-void bf8_inv_masked(bf8_t* in_0, bf8_t* in_1, bf8_t* out_0, bf8_t* out_1) {
-  bf8_t r = 0;
-  /*
-  do {
-    rand_mask(&r, 1);
-  } while(r == 0);
-  */
-  
-  //rand_mask(&r, 1);
-  // map 0 -> 1, and otherwize no change
-  //r += (!__builtin_popcount(r));
-  
+void bf8_inv_masked(bf8_t* a, bf8_t* b) {
+  bf8_t r = 0;  
   bf64_t big_r = bf64_rand();
   // map 2^64-1 -> 1
   r = (bf8_t) (big_r % 255 + 1);
 
-  bf8_t x0r = bf8_mul(*in_0, r);
-  bf8_t x1r = bf8_mul(r, *in_1);
+  bf8_t x0r = bf8_mul(*a, r);
+  bf8_t x1r = bf8_mul(r, *b);
   bf8_t xr = bf8_add(x0r, x1r);
   bf8_t xr_inv = bf8_inv(xr);
   bf8_t r1 = 0;
   rand_mask(&r1, 1);
   bf8_t y0 = bf8_add(xr_inv, r1);
   bf8_t y1 = r1;
-  *out_0 = bf8_mul(y0, r);
-  *out_1 = bf8_mul(r, y1);
+  *a = bf8_mul(y0, r);
+  *b = bf8_mul(r, y1);
 }
 
-void compute_sbox_masked(bf8_t* in_0, bf8_t* in_1, bf8_t* out_0, bf8_t* out_1) {
-  bf8_inv_masked(in_0, in_1, out_0, out_1);
+void compute_sbox_masked(bf8_t* a, bf8_t* b) {
+  bf8_inv_masked(a, b);
 
-  *out_0 = affine_incomplete(*out_0);
-  *out_1 = affine(*out_1);
+  *a = affine_incomplete(*a);
+  *b = affine(*b);
 }
 
 static void sub_bytes_masked(aes_block_t* state_0, aes_block_t* state_1, unsigned int block_words) {
@@ -58,14 +48,14 @@ static void sub_bytes_masked(aes_block_t* state_0, aes_block_t* state_1, unsigne
     for (unsigned int r = 0; r < AES_NR; r++) {
       bf8_t* share_0 = state_0[0][c] + r;
       bf8_t* share_1 = state_1[0][c] + r;
-      compute_sbox_masked(share_0, share_1, share_0, share_1);
+      compute_sbox_masked(share_0, share_1);
     }
   }
 }
 
 static void sub_words_masked(bf8_t* words) {
   for (int i = 0; i < 4; i++) {
-    compute_sbox_masked(words + i, words + i + AES_NR, words + i, words + i + AES_NR);
+    compute_sbox_masked(words + i, words + i + AES_NR);
   }
 }
 
