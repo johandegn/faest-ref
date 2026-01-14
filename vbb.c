@@ -457,6 +457,32 @@ const uint8_t* get_vole_q_hash(vbb_t* vbb, unsigned int idx) {
   return vbb->vole_cache + offset * ell_hat_bytes;
 }
 
+unsigned int transpose_index_share_0 = -1;
+unsigned int transpose_index_share_1 = -1;
+
+static inline void transpose_vole(vbb_t* vbb, unsigned int idx, uint8_t* cache) {
+  unsigned int lambda       = vbb->params->faest_param.lambda;
+  unsigned int lambda_bytes = lambda / 8;
+
+  unsigned int idx_relative = idx - vbb->cache_idx;
+  if(idx > vbb->params->faest_param.l){
+    idx_relative = idx_relative - vbb->v_buf_size + 1;
+  }
+  memset(vbb->v_buf, 0, lambda_bytes * vbb->v_buf_size);
+
+  uint8_t mask = bf8_rand() & (vbb->v_buf_size-1);
+
+  // Transpose 8 VOLEs into the buffer
+  for (unsigned int column = 0; column != lambda; column++) {
+    for (unsigned int i = 0; i < vbb->v_buf_size; i++) {
+      uint8_t vole_byte = cache[(idx_relative+(i^mask))/8 + vbb->row_count*column/8];//cache[(idx_relative + vbb->row_count * column) / 8 +(i/8)];
+      ptr_set_bit(vbb->v_buf, (vole_byte >> ((i^mask)%8)) & 1, (i^mask) * lambda + column);
+    }
+  }
+  transpose_index_share_0 = idx_relative;
+  transpose_index_share_1 = idx_relative;
+}
+
 static inline uint8_t* get_vole_row(vbb_t* vbb, unsigned int idx) {
   unsigned int lambda       = vbb->params->faest_param.lambda;
   unsigned int lambda_bytes = lambda / 8;
@@ -471,16 +497,14 @@ static inline uint8_t* get_vole_row(vbb_t* vbb, unsigned int idx) {
     }
   }
 
-  // Always transpose the VOLE access
-  // Compute the new idx based on the starting position of the cache
-  unsigned int idx_relative = idx - vbb->cache_idx;
-  memset(vbb->v_buf, 0, lambda_bytes);
-  // Transpose the VOLE into the buffer
-  for (unsigned int column = 0; column != lambda; ++column) {
-    ptr_set_bit(vbb->v_buf, ptr_get_bit(vbb->vole_cache, idx_relative + vbb->row_count * column),
-                column);
+  if (idx > transpose_index_share_0 + vbb->v_buf_size - 1 || idx < transpose_index_share_0) {
+    transpose_vole(vbb, idx, vbb->vole_cache);
+    transpose_index_share_1 = -1;
   }
-  return vbb->v_buf;
+  // Compute alligned idx
+  unsigned int idx_relative = idx - vbb->cache_idx;
+  unsigned int vbuf_index   = idx_relative % vbb->v_buf_size;
+  return vbb->v_buf + vbuf_index * lambda_bytes;
 }
 
 const bf256_t* get_vole_aes_256(vbb_t* vbb, unsigned int idx) {
@@ -505,21 +529,21 @@ const uint8_t* get_com_hash(vbb_t* vbb) {
 
 // V_k cache
 
-void add_vole_to_vk_cache(vbb_t* vbb, unsigned int idx, bf128_t* vole){
+void add_vole_to_vk_cache(vbb_t* vbb, unsigned int idx, bf128_t* vole) {
   unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
-  unsigned int offset = idx * lambda_bytes;
+  unsigned int offset       = idx * lambda_bytes;
   memcpy(vbb->vk_cache + offset, vole, lambda_bytes);
 }
 
-void add_vole_to_vk_cache_192(vbb_t* vbb, unsigned int idx, bf192_t* vole){
+void add_vole_to_vk_cache_192(vbb_t* vbb, unsigned int idx, bf192_t* vole) {
   unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
-  unsigned int offset = idx * lambda_bytes;
+  unsigned int offset       = idx * lambda_bytes;
   memcpy(vbb->vk_cache + offset, vole, lambda_bytes);
 }
 
-void add_vole_to_vk_cache_256(vbb_t* vbb, unsigned int idx, bf256_t* vole){
+void add_vole_to_vk_cache_256(vbb_t* vbb, unsigned int idx, bf256_t* vole) {
   unsigned int lambda_bytes = vbb->params->faest_param.lambda / 8;
-  unsigned int offset = idx * lambda_bytes;
+  unsigned int offset       = idx * lambda_bytes;
   memcpy(vbb->vk_cache + offset, vole, lambda_bytes);
 }
 
@@ -678,16 +702,16 @@ void reconstruct_vole(vbb_t* vbb) {
   }
 }
 
-const uint8_t* get_vole_v_hash_share(vbb_t* vbb, unsigned int idx, unsigned int share){
-  if (share == 1){
+const uint8_t* get_vole_v_hash_share(vbb_t* vbb, unsigned int idx, unsigned int share) {
+  if (share == 1) {
     const unsigned int lambda        = vbb->params->faest_param.lambda;
     const unsigned int ell           = vbb->params->faest_param.l;
     const unsigned int ell_hat       = ell + lambda * 2 + UNIVERSAL_HASH_B_BITS;
     const unsigned int ell_hat_bytes = (ell_hat + 7) / 8;
-    const unsigned int offset = idx - vbb->cache_idx;
+    const unsigned int offset        = idx - vbb->cache_idx;
 
     return vbb->v_mask_cache + offset * ell_hat_bytes;
-  }else{
+  } else {
     return get_vole_v_hash(vbb, idx);
   }
 }
@@ -715,12 +739,14 @@ const bf128_t* get_vole_aes_128_share(vbb_t* vbb, unsigned int idx, unsigned int
     const unsigned int ellhat = vbb->params->faest_param.l + lambda * 2 + UNIVERSAL_HASH_B_BITS;
     const unsigned int ellhat_bytes = ellhat / 8;
 
-    memset(vbb->v_buf, 0, lambda_bytes);
-    // Transpose on the fly into v_buf
-    for (unsigned int column = 0; column != lambda; ++column) {
-      ptr_set_bit(vbb->v_buf, ptr_get_bit(vbb->v_mask_cache + column * ellhat_bytes, idx), column);
+    if (idx > transpose_index_share_1 + vbb->v_buf_size - 1 || idx < transpose_index_share_1) {
+      transpose_vole(vbb, idx, vbb->v_mask_cache);
+      transpose_index_share_0 = -1;
     }
-    return (bf128_t*)vbb->v_buf;
+    // Compute alligned idx
+    unsigned int idx_relative = idx - vbb->cache_idx;
+    unsigned int vbuf_index   = idx_relative % vbb->v_buf_size;
+    return (bf128_t*)(vbb->v_buf + vbuf_index * lambda_bytes);
 
   } else {
     return get_vole_aes_128(vbb, idx);
@@ -747,10 +773,10 @@ const bf128_t* get_vk_128_share(vbb_t* vbb, unsigned int idx, unsigned int share
   }
 }
 
-void add_vole_to_vk_cache_share(vbb_t* vbb, unsigned int idx, bf128_t* VOLE, unsigned int share){
+void add_vole_to_vk_cache_share(vbb_t* vbb, unsigned int idx, bf128_t* VOLE, unsigned int share) {
   const unsigned int lambda       = vbb->params->faest_param.lambda;
   const unsigned int lambda_bytes = lambda / 8;
-  unsigned int offset = idx * lambda_bytes;
+  unsigned int offset             = idx * lambda_bytes;
   if (share == 1) {
     memcpy(vbb->vk_cache + offset, VOLE, lambda_bytes);
   } else {

@@ -41,6 +41,7 @@ struct vbb_t {
   uint8_t* v_mask_cache;
   uint8_t* vk_mask_cache;
   uint8_t* u_mask_cache;
+  unsigned int v_buf_size;
 };
 
 // Signer
@@ -89,5 +90,7 @@ const bf128_t* get_vk_128_share(vbb_t* vbb, unsigned int idx, unsigned int share
 const uint8_t* get_vole_u_share(vbb_t* vbb, unsigned int share);
 
 void add_vole_to_vk_cache_share(vbb_t* vbb, unsigned int idx, bf128_t* VOLE, unsigned int share);
+
+bf128_t* get_vole_real(vbb_t* vbb, unsigned idx, uint8_t* cache);
 
 #endif

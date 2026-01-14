@@ -70,7 +70,6 @@ typedef struct {
 // Placed after bitfield types
 #include "vbb.h"
 
-
 #define BF128_NUM_BYTES (128 / 8)
 #define BF192_NUM_BYTES (192 / 8)
 #define BF256_NUM_BYTES (256 / 8)
