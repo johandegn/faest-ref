@@ -55,7 +55,7 @@ int main() {
     }
 
     std::vector<uint8_t> reduced((deg * 2 + 7) / 8, 0);
-    bf2_poly_reduce(reduced.data(), unreduced.data(), deg * 2, &params.TREE_MODULI[0], deg + 1);
+    bf2_poly_reduce(reduced.data(), unreduced.data(), deg * 2, params.TREE_MODULI[0], deg + 1);
 
     std::cout << "constexpr size_t deg = " << deg << ";\n";
     print_named_array("unreduced", "uint8_t", unreduced);

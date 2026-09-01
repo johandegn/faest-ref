@@ -2121,7 +2121,7 @@ BOOST_AUTO_TEST_CASE(test_bf2_poly_faest_128f) {
   BOOST_TEST(res == tv::res);
 
   auto reduced = decltype(tv::reduced){0};
-  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, &params.TREE_MODULI[0],
+  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, params.TREE_MODULI[0],
                   tv::deg + 1);
   BOOST_TEST(reduced == tv::reduced);
 }
@@ -2137,7 +2137,7 @@ BOOST_AUTO_TEST_CASE(test_bf2_poly_faest_128s) {
   BOOST_TEST(res == tv::res);
 
   auto reduced = decltype(tv::reduced){0};
-  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, &params.TREE_MODULI[0],
+  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, params.TREE_MODULI[0],
                   tv::deg + 1);
   BOOST_TEST(reduced == tv::reduced);
 }
@@ -2153,7 +2153,7 @@ BOOST_AUTO_TEST_CASE(test_bf2_poly_faest_192f) {
   BOOST_TEST(res == tv::res);
 
   auto reduced = decltype(tv::reduced){0};
-  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, &params.TREE_MODULI[0],
+  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, params.TREE_MODULI[0],
                   tv::deg + 1);
   BOOST_TEST(reduced == tv::reduced);
 }
@@ -2169,7 +2169,7 @@ BOOST_AUTO_TEST_CASE(test_bf2_poly_faest_192s) {
   BOOST_TEST(res == tv::res);
 
   auto reduced = decltype(tv::reduced){0};
-  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, &params.TREE_MODULI[0],
+  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, params.TREE_MODULI[0],
                   tv::deg + 1);
   BOOST_TEST(reduced == tv::reduced);
 }
@@ -2185,7 +2185,7 @@ BOOST_AUTO_TEST_CASE(test_bf2_poly_faest_256f) {
   BOOST_TEST(res == tv::res);
 
   auto reduced = decltype(tv::reduced){0};
-  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, &params.TREE_MODULI[0],
+  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, params.TREE_MODULI[0],
                   tv::deg + 1);
   BOOST_TEST(reduced == tv::reduced);
 }
@@ -2201,7 +2201,7 @@ BOOST_AUTO_TEST_CASE(test_bf2_poly_faest_256s) {
   BOOST_TEST(res == tv::res);
 
   auto reduced = decltype(tv::reduced){0};
-  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, &params.TREE_MODULI[0],
+  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, params.TREE_MODULI[0],
                   tv::deg + 1);
   BOOST_TEST(reduced == tv::reduced);
 }
@@ -2217,7 +2217,7 @@ BOOST_AUTO_TEST_CASE(test_bf2_poly_faest_em_128f) {
   BOOST_TEST(res == tv::res);
 
   auto reduced = decltype(tv::reduced){0};
-  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, &params.TREE_MODULI[0],
+  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, params.TREE_MODULI[0],
                   tv::deg + 1);
   BOOST_TEST(reduced == tv::reduced);
 }
@@ -2233,7 +2233,7 @@ BOOST_AUTO_TEST_CASE(test_bf2_poly_faest_em_128s) {
   BOOST_TEST(res == tv::res);
 
   auto reduced = decltype(tv::reduced){0};
-  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, &params.TREE_MODULI[0],
+  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, params.TREE_MODULI[0],
                   tv::deg + 1);
   BOOST_TEST(reduced == tv::reduced);
 }
@@ -2249,7 +2249,7 @@ BOOST_AUTO_TEST_CASE(test_bf2_poly_faest_em_192f) {
   BOOST_TEST(res == tv::res);
 
   auto reduced = decltype(tv::reduced){0};
-  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, &params.TREE_MODULI[0],
+  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, params.TREE_MODULI[0],
                   tv::deg + 1);
   BOOST_TEST(reduced == tv::reduced);
 }
@@ -2265,7 +2265,7 @@ BOOST_AUTO_TEST_CASE(test_bf2_poly_faest_em_192s) {
   BOOST_TEST(res == tv::res);
 
   auto reduced = decltype(tv::reduced){0};
-  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, &params.TREE_MODULI[0],
+  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, params.TREE_MODULI[0],
                   tv::deg + 1);
   BOOST_TEST(reduced == tv::reduced);
 }
@@ -2281,7 +2281,7 @@ BOOST_AUTO_TEST_CASE(test_bf2_poly_faest_em_256f) {
   BOOST_TEST(res == tv::res);
 
   auto reduced = decltype(tv::reduced){0};
-  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, &params.TREE_MODULI[0],
+  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, params.TREE_MODULI[0],
                   tv::deg + 1);
   BOOST_TEST(reduced == tv::reduced);
 }
@@ -2297,7 +2297,7 @@ BOOST_AUTO_TEST_CASE(test_bf2_poly_faest_em_256s) {
   BOOST_TEST(res == tv::res);
 
   auto reduced = decltype(tv::reduced){0};
-  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, &params.TREE_MODULI[0],
+  bf2_poly_reduce(reduced.data(), tv::unreduced.data(), tv::deg * 2, params.TREE_MODULI[0],
                   tv::deg + 1);
   BOOST_TEST(reduced == tv::reduced);
 }

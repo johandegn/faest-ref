@@ -2,27 +2,20 @@
  *  SPDX-License-Identifier: MIT
  */
 
-// TODO: This is a pretty direct translation from the Python script and should be cleaned up at some
-// point.
-
-#if defined(HAVE_CONFIG_H)
-#include <config.h>
-#endif
-
 #include "../parameters.h"
-
-#include <boost/multiprecision/cpp_int.hpp>
-#include <boost/multiprecision/integer.hpp>
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <numeric>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -32,99 +25,283 @@
 #include <utility>
 #include <vector>
 
-using Int = boost::multiprecision::cpp_int;
+using namespace std;
 
 namespace {
-  [[noreturn]] void fail(const std::string& msg) {
+  class big_int {
+    vector<uint64_t> words_;
+
+    void normalize() {
+      while (!words_.empty() && words_.back() == 0) {
+        words_.pop_back();
+      }
+    }
+
+  public:
+    big_int() {}
+
+    big_int(uint64_t value) {
+      if (value) {
+        words_.push_back(value);
+      }
+    }
+
+    bool is_zero() const {
+      return words_.empty();
+    }
+
+    uint64_t word_at(size_t i) const {
+      return i < words_.size() ? words_[i] : 0;
+    }
+
+    bool test(unsigned int i) const {
+      return (word_at(i / 64) >> (i % 64)) & 1;
+    }
+
+    void set(unsigned int i) {
+      words_.resize(max(words_.size(), size_t(i / 64 + 1)), 0);
+      words_[i / 64] |= uint64_t{1} << (i % 64);
+    }
+
+    void flip(unsigned int i) {
+      words_.resize(max(words_.size(), size_t(i / 64 + 1)), 0);
+      words_[i / 64] ^= uint64_t{1} << (i % 64);
+      normalize();
+    }
+
+    unsigned int lsb() const {
+      if (is_zero()) {
+        throw invalid_argument("lsb of zero");
+      }
+      size_t i = 0;
+      while (!words_[i]) {
+        ++i;
+      }
+      auto w         = words_[i];
+      unsigned int b = 0;
+      while (!(w & 1)) {
+        w >>= 1;
+        ++b;
+      }
+      return 64 * i + b;
+    }
+
+    unsigned int msb() const {
+      if (is_zero()) {
+        throw invalid_argument("msb of zero");
+      }
+      auto w         = words_.back();
+      unsigned int b = 0;
+      while (w >>= 1) {
+        ++b;
+      }
+      return 64 * (words_.size() - 1) + b;
+    }
+
+    big_int& operator^=(const big_int& other) {
+      words_.resize(max(words_.size(), other.words_.size()), 0);
+      for (size_t i = 0; i < other.words_.size(); ++i) {
+        words_[i] ^= other.words_[i];
+      }
+      normalize();
+      return *this;
+    }
+
+    big_int& operator|=(const big_int& other) {
+      words_.resize(max(words_.size(), other.words_.size()), 0);
+      for (size_t i = 0; i < other.words_.size(); ++i) {
+        words_[i] |= other.words_[i];
+      }
+      return *this;
+    }
+
+    big_int& operator&=(const big_int& other) {
+      words_.resize(min(words_.size(), other.words_.size()));
+      for (size_t i = 0; i < words_.size(); ++i) {
+        words_[i] &= other.words_[i];
+      }
+      normalize();
+      return *this;
+    }
+
+    friend big_int operator<<(const big_int& a, unsigned int shift) {
+      if (a.is_zero()) {
+        return 0;
+      }
+      const auto offset = shift / 64;
+      const auto bits   = shift % 64;
+      big_int result;
+      result.words_.resize(a.words_.size() + offset + (bits != 0), 0);
+      for (size_t i = 0; i < a.words_.size(); ++i) {
+        result.words_[i + offset] |= a.words_[i] << bits;
+        if (bits) {
+          result.words_[i + offset + 1] |= a.words_[i] >> (64 - bits);
+        }
+      }
+      result.normalize();
+      return result;
+    }
+
+    big_int& operator<<=(unsigned int shift) {
+      return *this = *this << shift;
+    }
+
+    // Polynomial multiplication only needs a single-bit right shift.
+    void shift_right_one() {
+      for (size_t i = 0; i < words_.size(); ++i) {
+        words_[i] = (words_[i] >> 1) | (word_at(i + 1) << 63);
+      }
+      normalize();
+    }
+
+    big_int& operator++() {
+      for (auto& w : words_) {
+        if (++w) {
+          return *this;
+        }
+      }
+      words_.push_back(1);
+      return *this;
+    }
+
+    friend bool operator==(const big_int& a, const big_int& b) {
+      return a.words_ == b.words_;
+    }
+
+    friend bool operator<(const big_int& a, const big_int& b) {
+      if (a.words_.size() != b.words_.size()) {
+        return a.words_.size() < b.words_.size();
+      }
+      return lexicographical_compare(a.words_.rbegin(), a.words_.rend(), b.words_.rbegin(),
+                                     b.words_.rend());
+    }
+  };
+
+  big_int operator^(big_int a, const big_int& b) {
+    return a ^= b;
+  }
+
+  big_int operator|(big_int a, const big_int& b) {
+    return a |= b;
+  }
+
+  big_int operator&(big_int a, const big_int& b) {
+    return a &= b;
+  }
+
+  bool operator!=(const big_int& a, const big_int& b) {
+    return !(a == b);
+  }
+
+  [[noreturn]] void fail(const string& msg) {
     throw std::runtime_error(msg);
   }
 
-  void check(bool cond, const std::string& msg) {
+  void check(bool cond, const string& msg) {
     if (!cond) {
       fail(msg);
     }
   }
 
-  Int bit(unsigned int i) {
-    return Int(1) << i;
-  }
+  template <typename R, typename... Args>
+  class cached_eval {
+    map<tuple<Args...>, R> cache_;
+    function<R(Args...)> f_;
 
-  bool test_bit(const Int& x, unsigned int i) {
-    return ((x >> i) & 1) != 0;
+  public:
+    cached_eval(function<R(Args...)> f) : f_{f} {}
+
+    const R& operator()(Args... args) {
+      const auto key = make_tuple(args...);
+      auto it        = cache_.find(key);
+      if (it != cache_.end()) {
+        return it->second;
+      }
+
+      auto result = f_(args...);
+      cache_[key] = result;
+      return cache_[key];
+    }
+  };
+
+  big_int bit(unsigned int i) {
+    big_int ret{0};
+    ret.set(i);
+    return ret;
   }
 
   template <typename Fn>
-  void for_each_bit(Int x, Fn fn) {
-    while (x != 0) {
-      const auto b = boost::multiprecision::lsb(x);
+  void for_each_bit(big_int x, Fn fn) {
+    while (!x.is_zero()) {
+      const auto b = x.lsb();
       fn(b);
-      x ^= bit(b);
+      x.flip(b);
     }
   }
 
-  std::optional<unsigned int> pdeg(const Int& a) {
-    if (a == 0) {
-      return std::nullopt;
+  optional<unsigned int> pdeg(const big_int& a) {
+    if (a.is_zero()) {
+      return nullopt;
     }
-    return boost::multiprecision::msb(a);
+    return a.msb();
   }
 
-  Int pmul(Int a, Int b) {
-    Int r = 0;
-    while (b != 0) {
-      if ((b & 1) != 0) {
+  big_int pmul(big_int a, big_int b) {
+    big_int r = 0;
+    while (!b.is_zero()) {
+      if (b.test(0)) {
         r ^= a;
       }
-      b >>= 1;
+      b.shift_right_one();
       a <<= 1;
     }
     return r;
   }
 
-  Int pmod(Int a, const Int& m) {
+  big_int pmod(big_int a, const big_int& m) {
     const auto d = pdeg(m);
     check(d.has_value(), "polynomial modulus must be nonzero");
-    while (a != 0 && *pdeg(a) >= *d) {
+    while (!a.is_zero() && *pdeg(a) >= *d) {
       a ^= m << (*pdeg(a) - *d);
     }
     return a;
   }
 
-  Int pmulmod(const Int& a, const Int& b, const Int& m) {
+  big_int pmulmod(const big_int& a, const big_int& b, const big_int& m) {
     return pmod(pmul(a, b), m);
   }
 
-  Int pgcd(Int a, Int b) {
-    while (b != 0) {
-      const Int r = pmod(a, b);
-      a           = b;
-      b           = r;
+  big_int pgcd(big_int a, big_int b) {
+    while (!b.is_zero()) {
+      const big_int r = pmod(a, b);
+      a               = b;
+      b               = r;
     }
     return a;
   }
 
-  std::pair<Int, Int> pdivmod(Int a, const Int& b) {
-    Int q         = 0;
+  pair<big_int, big_int> pdivmod(big_int a, const big_int& b) {
+    big_int q     = 0;
     const auto db = pdeg(b);
     check(db.has_value(), "polynomial divisor must be nonzero");
-    while (a != 0 && *pdeg(a) >= *db) {
+    while (!a.is_zero() && *pdeg(a) >= *db) {
       const int s = *pdeg(a) - *db;
-      q |= bit(s);
+      q.set(s);
       a ^= b << s;
     }
     return {q, a};
   }
 
-  Int pinvmod(const Int& a, const Int& m) {
-    Int r0 = m;
-    Int r1 = pmod(a, m);
-    Int s0 = 0;
-    Int s1 = 1;
-    while (r1 != 0) {
+  big_int pinvmod(const big_int& a, const big_int& m) {
+    big_int r0{m};
+    big_int r1{pmod(a, m)};
+    big_int s0{0};
+    big_int s1{1};
+    while (!r1.is_zero()) {
       const auto [q, r] = pdivmod(r0, r1);
       r0                = r1;
       r1                = r;
-      const Int ns      = s0 ^ pmul(q, s1);
+      const big_int ns  = s0 ^ pmul(q, s1);
       s0                = s1;
       s1                = ns;
     }
@@ -132,52 +309,48 @@ namespace {
     return pmod(s0, m);
   }
 
-  Int poly_pow(const Int& p, unsigned int e) {
-    Int r = 1;
+  big_int poly_pow(const big_int& p, unsigned int e) {
+    big_int r = 1;
     for (unsigned int i = 0; i < e; ++i) {
       r = pmul(r, p);
     }
     return r;
   }
 
-  Int mtree_poly(const std::vector<Int>& tree_moduli) {
-    Int m = 1;
-    for (const Int& q : tree_moduli) {
-      m = pmul(m, q);
-    }
-    return m;
+  big_int mtree_poly(const vector<big_int>& tree_moduli) {
+    return accumulate(tree_moduli.begin(), tree_moduli.end(), big_int{1},
+                      [](auto left, auto right) { return pmul(left, right); });
   }
 
-  std::vector<Int> crt_lift_cols(const std::vector<Int>& tree_moduli) {
-    Int mtree = 1;
-    for (const Int& m : tree_moduli) {
-      mtree = pmul(mtree, m);
-    }
+  vector<big_int> crt_lift_cols(const vector<big_int>& tree_moduli) {
+    big_int mtree = mtree_poly(tree_moduli);
 
-    std::vector<Int> cols;
-    for (const Int& m : tree_moduli) {
+    vector<big_int> cols;
+    for (const big_int& m : tree_moduli) {
       const auto [q, rem] = pdivmod(mtree, m);
-      check(rem == 0, "tree modulus does not divide M_tree");
-      const Int e = pmulmod(q, pinvmod(q, m), mtree);
-      for (unsigned int b = 0; b < pdeg(m).value_or(0); ++b) {
-        cols.push_back(pmulmod(e, bit(b), mtree));
+      check(rem.is_zero(), "tree modulus does not divide M_tree");
+
+      const big_int e = pmulmod(q, pinvmod(q, m), mtree);
+      const auto deg  = pdeg(m).value_or(0);
+      for (unsigned int b = 0; b < deg; ++b) {
+        cols.emplace_back(pmulmod(e, bit(b), mtree));
       }
     }
     return cols;
   }
 
-  Int x_pow_2k(const Int& f, unsigned int k) {
-    Int r = pmod(2, f);
+  big_int x_pow_2k(const big_int& f, unsigned int k) {
+    big_int r = pmod(2, f);
     for (unsigned int i = 0; i < k; ++i) {
       r = pmulmod(r, r, f);
     }
     return r;
   }
 
-  std::set<unsigned int> prime_factors(unsigned int n) {
-    std::set<unsigned int> fs;
+  set<unsigned int> prime_factors(unsigned int n) {
+    set<unsigned int> fs;
     for (unsigned int d = 2; d * d <= n; ++d) {
-      while (n % d == 0) {
+      while (!(n % d)) {
         fs.insert(d);
         n /= d;
       }
@@ -188,22 +361,23 @@ namespace {
     return fs;
   }
 
-  bool is_irreducible(const Int& f) {
-    const auto n = pdeg(f);
-    if (n.value_or(0) <= 0) {
+  bool is_irreducible(const big_int& f) {
+    const auto n = pdeg(f).value_or(0);
+    if (n <= 0) {
       return false;
     }
-    if (*n == 1) {
+    if (n == 1) {
       return true;
     }
-    if ((f & 1) == 0) {
+    if (!f.test(0)) {
       return false;
     }
-    if (x_pow_2k(f, *n) != pmod(2, f)) {
+    if (x_pow_2k(f, n) != pmod(2, f)) {
       return false;
     }
-    for (auto q : prime_factors(*n)) {
-      const Int h = pmod(x_pow_2k(f, *n / q) ^ 2, f);
+
+    for (auto q : prime_factors(n)) {
+      const big_int h = pmod(x_pow_2k(f, n / q) ^ 2, f);
       if (pgcd(f, h) != 1) {
         return false;
       }
@@ -211,38 +385,47 @@ namespace {
     return true;
   }
 
-  const std::vector<Int>& irreducibles_of_degree(unsigned int d) {
-    static std::map<unsigned int, std::vector<Int>> cache;
-    auto it = cache.find(d);
-    if (it != cache.end()) {
-      return it->second;
-    }
-
-    std::vector<Int> out;
-    for (Int f = bit(d); f < bit(d + 1); ++f) {
+  vector<big_int> irreducibles_of_degree_impl(unsigned int d) {
+    vector<big_int> out;
+    for (big_int f = bit(d) | 1; !f.test(d + 1); ++f) {
       if (is_irreducible(f)) {
         out.push_back(f);
       }
     }
-    auto inserted = cache.emplace(d, std::move(out));
-    return inserted.first->second;
+    return out;
   }
 
-  Int faest_modulus(unsigned int lambda) {
+  cached_eval<vector<big_int>, unsigned int> irreducibles_of_degree{irreducibles_of_degree_impl};
+
+  big_int faest_modulus(unsigned int lambda) {
+    big_int modulus{1 | (1 << 2)};
     switch (lambda) {
-    case 128:
-      return bit(128) | bit(7) | bit(2) | bit(1) | 1;
-    case 192:
-      return bit(192) | bit(7) | bit(2) | bit(1) | 1;
-    case 256:
-      return bit(256) | bit(10) | bit(5) | bit(2) | 1;
+    case 128: {
+      modulus.set(128);
+      modulus.set(7);
+      modulus.set(1);
+      break;
+    }
+    case 192: {
+      modulus.set(192);
+      modulus.set(7);
+      modulus.set(1);
+      break;
+    }
+    case 256: {
+      modulus.set(256);
+      modulus.set(10);
+      modulus.set(5);
+      break;
+    }
     default:
       fail("unsupported FAEST modulus");
     }
+    return modulus;
   }
 
-  Int combine(const Int& mask, const std::vector<Int>& rows) {
-    Int out = 0;
+  big_int combine(const big_int& mask, const vector<big_int>& rows) {
+    big_int out = 0;
     for_each_bit(mask, [&](unsigned long i) {
       check(i < rows.size(), "row-combination mask exceeds row count");
       out ^= rows[i];
@@ -250,75 +433,73 @@ namespace {
     return out;
   }
 
-  unsigned int parity(Int x) {
+  unsigned int parity(const big_int& x) {
     bool p = false;
     for_each_bit(x, [&](unsigned long) { p = !p; });
     return p ? 1 : 0;
   }
 
-  std::vector<Int> reduction_rows(const Int& q, unsigned int ncols) {
+  vector<big_int> reduction_rows(const big_int& q, unsigned int ncols) {
     const auto d = pdeg(q);
-    std::vector<Int> rows(d.value_or(0), 0);
-    Int cur = 1;
+    vector<big_int> rows(d.value_or(0), 0);
+    big_int cur = 1;
     for (unsigned int j = 0; j < ncols; ++j) {
-      for_each_bit(cur, [&](unsigned long i) {
-        check((int)i < d, "reduction row index out of range");
-        rows[i] |= bit(j);
+      for_each_bit(cur, [&rows, j](unsigned long i) {
+        check(i < rows.size(), "reduction row index out of range");
+        rows[i].set(j);
       });
       cur = pmod(cur << 1, q);
     }
     return rows;
   }
 
-  std::vector<Int> pascal_rows(unsigned int e) {
-    std::vector<Int> rows;
+  vector<big_int> pascal_rows(unsigned int e) {
+    vector<big_int> rows;
     rows.reserve(e);
     for (unsigned int i = 0; i < e; ++i) {
-      Int row = 0;
-      for (unsigned int j = 0; j < e; ++j) {
+      big_int row = 0;
+      for (unsigned int j = i; j < e; ++j) {
         if ((i & j) == i) {
-          row |= bit(j);
+          row.set(j);
         }
       }
-      rows.push_back(row);
+      rows.emplace_back(row);
     }
     return rows;
   }
 
-  std::vector<Int> left_inverse(const std::vector<Int>& rows, unsigned int ncols) {
+  vector<big_int> left_inverse(const vector<big_int>& rows, unsigned int ncols) {
     const unsigned int m = rows.size();
-    std::vector<std::pair<Int, Int>> work;
+    vector<pair<big_int, big_int>> work;
     work.reserve(rows.size());
     for (unsigned int i = 0; i < m; ++i) {
       work.push_back({rows[i], bit(i)});
     }
 
-    std::vector<bool> used(m, false);
-    std::vector<unsigned int> piv_of_col(ncols, -1);
+    vector<bool> used(m, false);
+    vector<unsigned int> piv_of_col(ncols, -1);
     for (unsigned int c = 0; c < ncols; ++c) {
-      std::optional<unsigned int> piv = std::nullopt;
+      optional<unsigned int> piv = nullopt;
       for (unsigned int i = 0; i < m; ++i) {
-        if (!used[i] && test_bit(work[i].first, c)) {
+        if (!used[i] && work[i].first.test(c)) {
           piv = i;
           break;
         }
       }
-      if (!piv.has_value()) {
-        fail("evaluation map is not full rank");
-      }
-      used[*piv]    = true;
-      piv_of_col[c] = *piv;
-      const Int pr  = work[*piv].first;
-      const Int pt  = work[*piv].second;
+      check(piv.has_value(), "evaluation map is not full rank");
+      used[*piv]     = true;
+      piv_of_col[c]  = *piv;
+      const auto& pr = work[*piv].first;
+      const auto& pt = work[*piv].second;
       for (unsigned int i = 0; i < m; ++i) {
-        if (i != piv && test_bit(work[i].first, c)) {
+        if (i != piv && work[i].first.test(c)) {
           work[i].first ^= pr;
           work[i].second ^= pt;
         }
       }
     }
 
-    std::vector<Int> out;
+    vector<big_int> out;
     out.reserve(ncols);
     for (unsigned int c = 0; c < ncols; ++c) {
       out.push_back(work[piv_of_col[c]].second);
@@ -333,6 +514,8 @@ namespace {
       {0, 3, 1, 2},
   };
 
+  constexpr unsigned int F4INV[4] = {0, 1, 3, 2};
+
   constexpr unsigned int f4_mul(unsigned int a, unsigned int b) {
     return F4M[a][b];
   }
@@ -345,30 +528,29 @@ namespace {
     return r;
   }
 
-  std::vector<unsigned int> f4_pmul(const std::vector<unsigned int>& a,
-                                    const std::vector<unsigned int>& b) {
-    std::vector<unsigned int> out(a.size() + b.size() - 1, 0);
-    for (std::size_t i = 0; i < a.size(); ++i) {
-      if (a[i] == 0) {
+  vector<unsigned int> f4_pmul(const vector<unsigned int>& a, const vector<unsigned int>& b) {
+    vector<unsigned int> out(a.size() + b.size() - 1, 0);
+    for (size_t i = 0; i < a.size(); ++i) {
+      if (!a[i]) {
         continue;
       }
-      for (std::size_t j = 0; j < b.size(); ++j) {
+      for (size_t j = 0; j < b.size(); ++j) {
         out[i + j] ^= f4_mul(a[i], b[j]);
       }
     }
     return out;
   }
 
-  std::vector<unsigned int> f4_pmod(const std::vector<unsigned int>& a,
-                                    const std::vector<unsigned int>& q) {
-    const int dq                   = q.size() - 1;
-    std::vector<unsigned int> work = a;
-    for (int i = work.size() - 1; i >= dq; --i) {
+  vector<unsigned int> f4_pmod(const vector<unsigned int>& a, const vector<unsigned int>& q) {
+    check(q.size(), "q needs to be non-zero");
+    const unsigned int dq     = q.size() - 1;
+    vector<unsigned int> work = a;
+    for (int i = work.size() - 1; i >= (int)dq; --i) {
       const auto c = work[i];
-      if (c == 0) {
+      if (!c) {
         continue;
       }
-      for (unsigned int j = 0; (int)j <= dq; ++j) {
+      for (unsigned int j = 0; j <= dq; ++j) {
         work[i - dq + j] ^= f4_mul(c, q[j]);
       }
     }
@@ -376,61 +558,58 @@ namespace {
     return work;
   }
 
-  unsigned int f4_peval(const std::vector<unsigned int>& p, unsigned int t) {
-    unsigned int r = 0;
-    for (auto it = p.rbegin(); it != p.rend(); ++it) {
-      r = f4_mul(r, t) ^ *it;
-    }
-    return r;
+  unsigned int f4_peval(const vector<unsigned int>& p, unsigned int t) {
+    return accumulate(p.rbegin(), p.rend(), 0u,
+                      [&t](unsigned int l, unsigned int r) { return f4_mul(l, t) ^ r; });
   }
 
   template <typename Fn>
-  void f4_tuples_rec(unsigned int len, std::vector<unsigned int>& cur, Fn fn) {
+  void f4_tuples_rec(unsigned int len, vector<unsigned int>& cur, Fn fn) {
     if (cur.size() == len) {
       fn(cur);
-      return;
-    }
-    for (unsigned int v = 0; v < 4; ++v) {
-      cur.push_back(v);
-      f4_tuples_rec(len, cur, fn);
-      cur.pop_back();
+    } else {
+      for (unsigned int v = 0; v < 4; ++v) {
+        cur.push_back(v);
+        f4_tuples_rec(len, cur, fn);
+        cur.pop_back();
+      }
     }
   }
 
-  std::vector<std::vector<unsigned int>> f4_irreducibles(unsigned int m) {
-    std::vector<std::vector<unsigned int>> quads;
+  bool f4_poly_has_roots(const vector<unsigned int>& p) {
+    for (unsigned int u = 0; u != 4; ++u) {
+      if (!f4_peval(p, u)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  vector<vector<unsigned int>> f4_irreducibles_impl(unsigned int m) {
+    vector<vector<unsigned int>> quads;
     if (m == 4) {
-      std::vector<unsigned int> cur;
+      vector<unsigned int> cur;
       f4_tuples_rec(2, cur, [&](const auto& t) {
-        std::vector<unsigned int> p = t;
+        vector<unsigned int> p = t;
         p.push_back(1);
-        bool no_roots = true;
-        for (unsigned int u = 0; u < 4; ++u) {
-          if (f4_peval(p, u) == 0) {
-            no_roots = false;
-            break;
-          }
-        }
-        if (no_roots) {
+        if (!f4_poly_has_roots(p)) {
           quads.push_back(p);
         }
       });
     }
 
-    std::vector<std::vector<unsigned int>> out;
-    std::vector<unsigned int> cur;
+    vector<vector<unsigned int>> out;
+    vector<unsigned int> cur;
     f4_tuples_rec(m, cur, [&](const auto& t) {
-      std::vector<unsigned int> p = t;
+      auto p = t;
       p.push_back(1);
-      for (unsigned int u = 0; u < 4; ++u) {
-        if (f4_peval(p, u) == 0) {
-          return;
-        }
+      if (f4_poly_has_roots(p)) {
+        return;
       }
       if (m == 4) {
         for (const auto& q2 : quads) {
           const auto rem = f4_pmod(p, q2);
-          if (std::all_of(rem.begin(), rem.end(), [](auto v) { return v == 0; })) {
+          if (all_of(rem.begin(), rem.end(), logical_not{})) {
             return;
           }
         }
@@ -440,16 +619,17 @@ namespace {
     return out;
   }
 
-  std::vector<std::vector<unsigned int>> f4_xpow_cols(const std::vector<unsigned int>& q,
-                                                      unsigned int count) {
+  cached_eval<vector<vector<unsigned int>>, unsigned int> f4_irreducibles{f4_irreducibles_impl};
+
+  vector<vector<unsigned int>> f4_xpow_cols(const vector<unsigned int>& q, unsigned int count) {
     const unsigned int dq = q.size() - 1;
-    std::vector<unsigned int> cur(dq, 0);
+    vector<unsigned int> cur(dq, 0);
     cur[0] = 1;
-    std::vector<std::vector<unsigned int>> cols;
+    vector<vector<unsigned int>> cols;
     cols.reserve(count);
     for (unsigned int i = 0; i < count; ++i) {
       cols.push_back(cur);
-      std::vector<unsigned int> shifted;
+      vector<unsigned int> shifted;
       shifted.reserve(cur.size() + 1);
       shifted.push_back(0);
       shifted.insert(shifted.end(), cur.begin(), cur.end());
@@ -458,35 +638,33 @@ namespace {
     return cols;
   }
 
-  std::vector<std::vector<unsigned int>>
-  f4_matinv(const std::vector<std::vector<unsigned int>>& m) {
-    const unsigned int n            = m.size();
-    constexpr unsigned int F4INV[4] = {0, 1, 3, 2};
-    std::vector<std::vector<unsigned int>> a;
+  vector<vector<unsigned int>> f4_matinv(const vector<vector<unsigned int>>& m) {
+    const unsigned int n = m.size();
+    vector<vector<unsigned int>> a;
     a.reserve(m.size());
     for (unsigned int i = 0; i < n; ++i) {
       auto row = m[i];
       row.resize(2 * n, 0);
       row[n + i] = 1;
-      a.push_back(std::move(row));
+      a.push_back(move(row));
     }
 
     for (unsigned int c = 0; c < n; ++c) {
-      std::optional<unsigned int> piv = std::nullopt;
+      optional<unsigned int> piv = nullopt;
       for (unsigned int i = c; i < n; ++i) {
-        if (a[i][c] != 0) {
+        if (a[i][c]) {
           piv = i;
           break;
         }
       }
       check(piv.has_value(), "F4 matrix is singular");
-      std::swap(a[c], a[*piv]);
+      swap(a[c], a[*piv]);
       const auto inv = F4INV[a[c][c]];
       for (unsigned int j = 0; j < 2 * n; ++j) {
         a[c][j] = f4_mul(inv, a[c][j]);
       }
       for (unsigned int i = 0; i < n; ++i) {
-        if (i == c || a[i][c] == 0) {
+        if (i == c || !a[i][c]) {
           continue;
         }
         const auto factor = a[i][c];
@@ -496,7 +674,7 @@ namespace {
       }
     }
 
-    std::vector<std::vector<unsigned int>> inv;
+    vector<vector<unsigned int>> inv;
     inv.reserve(m.size());
     for (unsigned int i = 0; i < n; ++i) {
       inv.emplace_back(a[i].begin() + n, a[i].end());
@@ -507,11 +685,11 @@ namespace {
   struct Alg {
     unsigned int na = 0;
     unsigned int nb = 0;
-    std::vector<std::pair<Int, Int>> gates;
-    std::vector<Int> w;
+    vector<pair<big_int, big_int>> gates;
+    vector<big_int> w;
   };
 
-  Alg precompose(const Alg& alg, const std::vector<Int>& ar, const std::vector<Int>& br,
+  Alg precompose(const Alg& alg, const vector<big_int>& ar, const vector<big_int>& br,
                  unsigned int na, unsigned int nb) {
     Alg out;
     out.na = na;
@@ -528,7 +706,7 @@ namespace {
     enum class Kind { Inf, Lin, Irr };
 
     Kind kind      = Kind::Inf;
-    Int poly       = 0;
+    big_int poly   = 0;
     unsigned int e = 1;
   };
 
@@ -538,7 +716,7 @@ namespace {
     Kind kind      = Kind::Base;
     unsigned int s = 0;
     unsigned int m = 0;
-    std::vector<Place> picks;
+    vector<Place> picks;
   };
 
   struct CostPlan {
@@ -546,9 +724,11 @@ namespace {
     Plan plan;
   };
 
-  std::pair<Alg, std::vector<Int>> place_alg(const Place& pk, unsigned int na, unsigned int nb);
-  Alg full_alg(unsigned int n);
-  Alg short_alg(unsigned int n);
+  pair<Alg, vector<big_int>> place_alg(const Place& pk, unsigned int na, unsigned int nb);
+  Alg full_alg_impl(unsigned int n);
+  Alg short_alg_impl(unsigned int n);
+  cached_eval<Alg, unsigned int> full_alg{full_alg_impl};
+  cached_eval<Alg, unsigned int> short_alg{short_alg_impl};
 
   constexpr unsigned int TOWER_FIELD_6 = 15;
   constexpr unsigned int TOWER_FIELD_8 = 24;
@@ -563,32 +743,32 @@ namespace {
     return 0;
   }
 
-  std::pair<std::vector<std::vector<unsigned int>>, std::vector<std::vector<unsigned int>>>
+  pair<vector<vector<unsigned int>>, vector<vector<unsigned int>>>
   f4_full_product_alg(unsigned int m) {
-    std::vector<std::vector<unsigned int>> gates4;
-    std::vector<std::vector<unsigned int>> ev;
-    std::vector<std::vector<std::pair<unsigned int, unsigned int>>> r4;
+    vector<vector<unsigned int>> gates4;
+    vector<vector<unsigned int>> ev;
+    vector<vector<pair<unsigned int, unsigned int>>> r4;
 
     const unsigned int npts = m == 2 ? 2 : 4;
     for (unsigned int t = 0; t < npts; ++t) {
       r4.push_back({{gates4.size(), 1}});
-      std::vector<unsigned int> gate;
-      std::vector<unsigned int> row;
+      vector<unsigned int> gate;
+      vector<unsigned int> row;
       for (unsigned int j = 0; j < m; ++j) {
         gate.push_back(f4_pow(t, j));
       }
       for (unsigned int j = 0; j < 2 * m - 1; ++j) {
         row.push_back(f4_pow(t, j));
       }
-      gates4.push_back(std::move(gate));
-      ev.push_back(std::move(row));
+      gates4.push_back(move(gate));
+      ev.push_back(move(row));
     }
 
     r4.push_back({{gates4.size(), 1}});
-    std::vector<unsigned int> inf_gate(m, 0);
+    vector<unsigned int> inf_gate(m, 0);
     inf_gate[m - 1] = 1;
     gates4.push_back(inf_gate);
-    std::vector<unsigned int> inf_row(2 * m - 1, 0);
+    vector<unsigned int> inf_row(2 * m - 1, 0);
     inf_row[2 * m - 2] = 1;
     ev.push_back(inf_row);
 
@@ -597,41 +777,39 @@ namespace {
       const auto beta    = q2[0];
       const auto alpha   = q2[1];
       const auto cols_in = f4_xpow_cols(q2, m);
-      std::vector<unsigned int> r0;
-      std::vector<unsigned int> r1;
+      vector<unsigned int> r0;
+      vector<unsigned int> r1;
+      vector<unsigned int> rx;
       for (const auto& col : cols_in) {
         r0.push_back(col[0]);
         r1.push_back(col[1]);
+        rx.push_back(col[0] ^ col[1]);
       }
       const unsigned int ga = gates4.size();
       gates4.push_back(r0);
       gates4.push_back(r1);
-      std::vector<unsigned int> rx;
-      for (unsigned int i = 0; i < m; ++i) {
-        rx.push_back(r0[i] ^ r1[i]);
-      }
-      gates4.push_back(std::move(rx));
+      gates4.push_back(move(rx));
 
       const auto cols_out = f4_xpow_cols(q2, 2 * m - 1);
-      std::vector<unsigned int> ev0;
-      std::vector<unsigned int> ev1;
+      vector<unsigned int> ev0;
+      vector<unsigned int> ev1;
       for (const auto& col : cols_out) {
         ev0.push_back(col[0]);
         ev1.push_back(col[1]);
       }
-      ev.push_back(std::move(ev0));
-      ev.push_back(std::move(ev1));
+      ev.push_back(move(ev0));
+      ev.push_back(move(ev1));
       r4.push_back({{ga, 1}, {ga + 1, beta}});
       r4.push_back({{ga, 1}, {ga + 1, 1 ^ alpha}, {ga + 2, 1}});
     }
 
     const auto inv        = f4_matinv(ev);
     const unsigned int ng = gates4.size();
-    std::vector<std::vector<unsigned int>> w4(2 * m - 1, std::vector<unsigned int>(ng, 0));
+    vector<vector<unsigned int>> w4(2 * m - 1, vector<unsigned int>(ng, 0));
     for (unsigned int k = 0; k < 2 * m - 1; ++k) {
       for (unsigned int j = 0; j < r4.size(); ++j) {
         const auto c = inv[k][j];
-        if (c == 0) {
+        if (!c) {
           continue;
         }
         for (const auto& [g, coeff] : r4[j]) {
@@ -642,15 +820,15 @@ namespace {
     return {gates4, w4};
   }
 
-  Int t_to_bits(const std::vector<unsigned int>& t) {
-    Int out = 0;
+  big_int t_to_bits(const vector<unsigned int>& t) {
+    big_int out{0};
     for (unsigned int j = 0; j < t.size(); ++j) {
-      out |= Int(t[j]) << (2 * j);
+      out |= big_int(t[j]) << (2 * j);
     }
     return out;
   }
 
-  std::pair<Alg, std::vector<Int>> tower_place_alg(const Int& q, unsigned int na, unsigned int nb) {
+  pair<Alg, vector<big_int>> tower_place_alg(const big_int& q, unsigned int na, unsigned int nb) {
     const unsigned int d     = pdeg(q).value_or(0);
     const unsigned int m     = d / 2;
     const auto tower_modulus = f4_irreducibles(m)[0];
@@ -658,61 +836,48 @@ namespace {
 
     const auto rq          = f4_xpow_cols(tower_modulus, 2 * m - 1);
     const unsigned int ng4 = gates4.size();
-    std::vector<std::vector<unsigned int>> w4m(m, std::vector<unsigned int>(ng4, 0));
+    vector<vector<unsigned int>> w4m(m, vector<unsigned int>(ng4, 0));
     for (unsigned int k = 0; k < m; ++k) {
       for (unsigned int j = 0; j < 2 * m - 1; ++j) {
         const auto c = rq[j][k];
-        if (c == 0) {
-          continue;
-        }
         for (unsigned int g = 0; g < ng4; ++g) {
           w4m[k][g] ^= f4_mul(c, w4[j][g]);
         }
       }
     }
 
-    const std::vector<unsigned int> one = [&] {
-      std::vector<unsigned int> v(m, 0);
-      v[0] = 1;
-      return v;
-    }();
-
-    auto tmul = [&](const auto& a, const auto& b) { return f4_pmod(f4_pmul(a, b), tower_modulus); };
-
-    std::optional<std::vector<unsigned int>> rho;
-    std::vector<unsigned int> cand;
+    optional<vector<unsigned int>> rho;
+    vector<unsigned int> cand;
     f4_tuples_rec(m, cand, [&](const auto& c) {
       if (rho.has_value()) {
         return;
       }
-      std::vector<unsigned int> acc(m, 0);
+      vector<unsigned int> acc(m, 0);
       for (int i = d; i >= 0; --i) {
-        acc = tmul(acc, c);
-        if (test_bit(q, i)) {
-          for (unsigned int j = 0; j < m; ++j) {
-            acc[j] ^= one[j];
-          }
+        acc = f4_pmod(f4_pmul(acc, c), tower_modulus);
+        if (q.test(i)) {
+          acc[0] ^= 1;
         }
       }
-      if (std::all_of(acc.begin(), acc.end(), [](auto v) { return v == 0; })) {
+      if (all_of(acc.begin(), acc.end(), [](auto v) { return !v; })) {
         rho = c;
       }
     });
     check(rho.has_value(), "no root of q in F4 tower field");
 
-    std::vector<Int> cols;
-    auto power = one;
+    vector<big_int> cols;
+    vector<unsigned int> power(1, 1);
     for (unsigned int i = 0; i < d; ++i) {
       cols.push_back(t_to_bits(power));
-      power = tmul(power, *rho);
+      power = f4_pmod(f4_pmul(power, *rho), tower_modulus);
     }
 
-    std::vector<Int> mrows(d, 0);
+    vector<big_int> mrows(d, 0);
     for (unsigned int r = 0; r < d; ++r) {
-      Int row = 0;
+      big_int row = 0;
       for (unsigned int i = 0; i < d; ++i) {
-        if (test_bit(cols[i], r)) {
-          row |= bit(i);
+        if (cols[i].test(r)) {
+          row.set(i);
         }
       }
       mrows[r] = row;
@@ -721,39 +886,40 @@ namespace {
 
     const auto red_a = reduction_rows(q, na);
     const auto red_b = reduction_rows(q, nb);
-    std::vector<Int> trow_a(d);
-    std::vector<Int> trow_b(d);
+    vector<big_int> trow_a(d);
+    vector<big_int> trow_b(d);
     for (unsigned int r = 0; r < d; ++r) {
       trow_a[r] = combine(mrows[r], red_a);
       trow_b[r] = combine(mrows[r], red_b);
     }
 
     auto form_bits = [&](const auto& l, const auto& trow) {
-      Int p = 0;
-      Int r = 0;
+      big_int p = 0;
+      big_int r = 0;
       for (unsigned int j = 0; j < l.size(); ++j) {
         const auto c = l[j];
-        if (c == 0) {
+        if (!c) {
           continue;
         }
+
         const auto& pj = trow[2 * j];
         const auto& rj = trow[2 * j + 1];
-        if ((c & 1) != 0) {
+        if (c & 1) {
           p ^= pj;
           r ^= rj;
         }
-        if ((c & 2) != 0) {
+        if (c & 2) {
           p ^= rj;
           r ^= pj ^ rj;
         }
       }
-      return std::pair<Int, Int>{p, r};
+      return make_pair(p, r);
     };
 
     Alg alg;
     alg.na = na;
     alg.nb = nb;
-    std::vector<std::pair<Int, Int>> comp;
+    vector<pair<big_int, big_int>> comp;
     for (const auto& l : gates4) {
       const auto [pa, ra]  = form_bits(l, trow_a);
       const auto [pb, rb]  = form_bits(l, trow_b);
@@ -764,21 +930,22 @@ namespace {
       comp.push_back({bit(b) | bit(b + 1), bit(b) | bit(b + 2)});
     }
 
-    std::vector<Int> towout(d, 0);
+    vector<big_int> towout(d, 0);
     for (unsigned int k = 0; k < m; ++k) {
-      Int o0 = 0;
-      Int o1 = 0;
+      big_int o0 = 0;
+      big_int o1 = 0;
       for (unsigned int g = 0; g < ng4; ++g) {
         const auto c = w4m[k][g];
-        if (c == 0) {
+        if (!c) {
           continue;
         }
+
         const auto [g0, g1] = comp[g];
-        if ((c & 1) != 0) {
+        if ((c & 1)) {
           o0 ^= g0;
           o1 ^= g1;
         }
-        if ((c & 2) != 0) {
+        if ((c & 2)) {
           o0 ^= g1;
           o1 ^= g0 ^ g1;
         }
@@ -794,65 +961,67 @@ namespace {
     return {alg, reduction_rows(q, na + nb - 1)};
   }
 
-  const std::array<Int, 13> MONT5_GATES = {
-      Int(0b11111), Int(0b11101), Int(0b10111), Int(0b11011), Int(0b01101),
-      Int(0b10110), Int(0b11000), Int(0b00011), Int(0b10001), Int(0b10000),
-      Int(0b01000), Int(0b00010), Int(0b00001),
+  const array<big_int, 13> MONT5_GATES = {
+      big_int(0b11111), big_int(0b11101), big_int(0b10111), big_int(0b11011), big_int(0b01101),
+      big_int(0b10110), big_int(0b11000), big_int(0b00011), big_int(0b10001), big_int(0b10000),
+      big_int(0b01000), big_int(0b00010), big_int(0b00001),
   };
 
-  const std::array<std::vector<unsigned int>, 9> MONT5_W = {
-      std::vector<unsigned int>{12},
-      std::vector<unsigned int>{7, 11, 12},
-      std::vector<unsigned int>{2, 5, 7, 8, 9, 12},
-      std::vector<unsigned int>{0, 1, 3, 6, 8, 9},
-      std::vector<unsigned int>{0, 4, 5, 6, 7, 9, 10, 11, 12},
-      std::vector<unsigned int>{0, 2, 3, 7, 8, 12},
-      std::vector<unsigned int>{1, 4, 6, 8, 9, 12},
-      std::vector<unsigned int>{6, 9, 10},
-      std::vector<unsigned int>{9},
+  const array<vector<unsigned int>, 9> MONT5_W = {
+      vector<unsigned int>{12},
+      vector<unsigned int>{7, 11, 12},
+      vector<unsigned int>{2, 5, 7, 8, 9, 12},
+      vector<unsigned int>{0, 1, 3, 6, 8, 9},
+      vector<unsigned int>{0, 4, 5, 6, 7, 9, 10, 11, 12},
+      vector<unsigned int>{0, 2, 3, 7, 8, 12},
+      vector<unsigned int>{1, 4, 6, 8, 9, 12},
+      vector<unsigned int>{6, 9, 10},
+      vector<unsigned int>{9},
   };
 
   Alg mont5_alg() {
     Alg alg;
     alg.na = 5;
     alg.nb = 5;
-    for (const Int& mask : MONT5_GATES) {
+    for (const big_int& mask : MONT5_GATES) {
       alg.gates.push_back({mask, mask});
     }
     for (const auto& row : MONT5_W) {
-      Int w = 0;
+      big_int w = 0;
       for (auto g : row) {
-        w |= bit(g);
+        w.set(g);
       }
       alg.w.push_back(w);
     }
     return alg;
   }
 
+  CostPlan short_cost_impl(unsigned int n);
+  cached_eval<CostPlan, unsigned int> short_cost{short_cost_impl};
+
   unsigned int place_gate_cost(const Place& pk);
-  CostPlan short_cost(unsigned int n);
 
   struct CtrSearchOption {
     unsigned int degree = 0;
     unsigned int cost   = 0;
-    std::vector<Place> picks;
+    vector<Place> picks;
   };
 
-  std::optional<std::pair<unsigned int, std::vector<Place>>>
+  optional<pair<unsigned int, vector<Place>>>
   crt_search(unsigned int target, unsigned int maxe_lin, unsigned int cap_irr,
-             const std::map<unsigned int, std::vector<Int>>& irr_pools) {
-    std::vector<std::vector<CtrSearchOption>> groups;
+             const map<unsigned int, vector<big_int>>& irr_pools) {
+    vector<vector<CtrSearchOption>> groups;
 
-    for (const auto& spec : {std::pair<Place::Kind, Int>{Place::Kind::Inf, 0},
-                             std::pair<Place::Kind, Int>{Place::Kind::Lin, 0b10},
-                             std::pair<Place::Kind, Int>{Place::Kind::Lin, 0b11}}) {
-      std::vector<CtrSearchOption> opts;
+    for (const auto& spec : {pair<Place::Kind, big_int>{Place::Kind::Inf, 0},
+                             pair<Place::Kind, big_int>{Place::Kind::Lin, 0b10},
+                             pair<Place::Kind, big_int>{Place::Kind::Lin, 0b11}}) {
+      vector<CtrSearchOption> opts;
       for (unsigned int e = 1; e <= maxe_lin; ++e) {
         Place pk{spec.first, spec.second, e};
         opts.push_back({e, short_cost(e).gates, {pk}});
       }
       if (!opts.empty()) {
-        groups.push_back(std::move(opts));
+        groups.push_back(move(opts));
       }
     }
 
@@ -861,68 +1030,65 @@ namespace {
         continue;
       }
       if (d == 2) {
-        const Int p = pool[0];
-        std::vector<CtrSearchOption> opts;
+        const big_int& p = pool[0];
+        vector<CtrSearchOption> opts;
         for (unsigned int e = 1; d * e <= cap_irr; ++e) {
           Place pk{Place::Kind::Irr, p, e};
           opts.push_back({d * e, place_gate_cost(pk), {pk}});
         }
         if (!opts.empty()) {
-          groups.push_back(std::move(opts));
+          groups.push_back(move(opts));
         }
       } else {
         Place first{Place::Kind::Irr, pool[0], 1};
         const auto per  = place_gate_cost(first);
-        const auto maxt = std::min<std::size_t>(pool.size(), target / d + 1);
-        std::vector<CtrSearchOption> opts;
+        const auto maxt = min<size_t>(pool.size(), target / d + 1);
+        vector<CtrSearchOption> opts;
         for (unsigned int t = 1; t <= maxt; ++t) {
-          std::vector<Place> picks;
+          vector<Place> picks;
           for (unsigned int i = 0; i < t; ++i) {
             picks.push_back({Place::Kind::Irr, pool[i], 1});
           }
-          opts.push_back({t * d, t * per, std::move(picks)});
+          opts.push_back({t * d, t * per, move(picks)});
         }
         if (!opts.empty()) {
-          groups.push_back(std::move(opts));
+          groups.push_back(move(opts));
         }
       }
     }
 
-    std::map<unsigned int, std::pair<unsigned int, std::vector<Place>>> dp;
+    map<unsigned int, pair<unsigned int, vector<Place>>> dp;
     dp[0] = {0, {}};
     for (const auto& opts : groups) {
       auto ndp = dp;
       for (const auto& [deg0, state] : dp) {
         const auto& [cost0, picks0] = state;
         for (const auto& opt : opts) {
-          const auto nd = std::min(deg0 + opt.degree, target);
+          const auto nd = min(deg0 + opt.degree, target);
           const auto nc = cost0 + opt.cost;
           auto it       = ndp.find(nd);
           if (it == ndp.end() || nc < it->second.first) {
-            std::vector<Place> picks = picks0;
+            vector<Place> picks = picks0;
             picks.insert(picks.end(), opt.picks.begin(), opt.picks.end());
-            ndp[nd] = {nc, std::move(picks)};
+            ndp[nd] = {nc, move(picks)};
           }
         }
       }
-      dp = std::move(ndp);
+      dp = move(ndp);
     }
 
     auto it = dp.find(target);
     if (it == dp.end()) {
-      return std::nullopt;
+      return nullopt;
     }
     return it->second;
   }
 
-  CostPlan full_cost(unsigned int n) {
-    static std::map<unsigned int, CostPlan> cache;
-    auto it = cache.find(n);
-    if (it != cache.end()) {
-      return it->second;
-    }
+  CostPlan full_cost_impl(unsigned int n);
+  cached_eval<CostPlan, unsigned int> full_cost{full_cost_impl};
 
-    std::optional<CostPlan> best;
+  CostPlan full_cost_impl(unsigned int n) {
+    optional<CostPlan> best;
     if (n == 1) {
       best = CostPlan{1, Plan{Plan::Kind::Base, 0, 0, {}}};
     } else {
@@ -936,7 +1102,7 @@ namespace {
           best = CostPlan{c, Plan{Plan::Kind::Split, s, m, {}}};
         }
       }
-      std::map<unsigned int, std::vector<Int>> pools;
+      map<unsigned int, vector<big_int>> pools;
       for (unsigned int d = 2; d < n; ++d) {
         pools[d] = irreducibles_of_degree(d);
       }
@@ -949,17 +1115,10 @@ namespace {
       }
     }
     check(best.has_value(), "full_cost failed");
-    cache[n] = *best;
     return *best;
   }
 
-  CostPlan short_cost(unsigned int n) {
-    static std::map<unsigned int, CostPlan> cache;
-    auto it = cache.find(n);
-    if (it != cache.end()) {
-      return it->second;
-    }
-
+  CostPlan short_cost_impl(unsigned int n) {
     CostPlan best;
     if (n == 1) {
       best = CostPlan{1, Plan{Plan::Kind::Base, 0, 0, {}}};
@@ -972,7 +1131,6 @@ namespace {
         }
       }
     }
-    cache[n] = best;
     return best;
   }
 
@@ -982,60 +1140,54 @@ namespace {
     }
     const unsigned int d          = pdeg(pk.poly).value_or(0);
     const unsigned int tower_cost = tower_field_cost(d);
-    if (pk.e == 1 && tower_cost != 0) {
-      return std::min(tower_cost, full_cost(d).gates);
+    if (pk.e == 1 && tower_cost) {
+      return min(tower_cost, full_cost(d).gates);
     }
     return full_cost(d * pk.e).gates;
   }
 
-  Alg full_alg(unsigned int n) {
-    static std::map<unsigned int, Alg> cache;
-    auto it = cache.find(n);
-    if (it != cache.end()) {
-      return it->second;
-    }
-
+  Alg full_alg_impl(unsigned int n) {
     const Plan plan = full_cost(n).plan;
-    Alg alg;
-    if (plan.kind == Plan::Kind::Base) {
-      alg = Alg{1, 1, {{1, 1}}, {1}};
-    } else if (plan.kind == Plan::Kind::Mont5) {
-      alg = mont5_alg();
-    } else if (plan.kind == Plan::Kind::Split) {
+    switch (plan.kind) {
+    case Plan::Kind::Base: {
+      return Alg{1, 1, {{1, 1}}, {1}};
+    }
+    case Plan::Kind::Mont5: {
+      return mont5_alg();
+    }
+    case Plan::Kind::Split: {
       const auto s           = plan.s;
       const auto m           = plan.m;
       const auto oa          = full_alg(s);
       const auto ia          = full_alg(m);
       const unsigned int ngi = ia.gates.size();
 
-      std::vector<std::pair<Int, Int>> gates;
+      vector<pair<big_int, big_int>> gates;
       for (const auto& [fo, go] : oa.gates) {
-        std::vector<Int> ar(m, 0);
-        std::vector<Int> br(m, 0);
+        vector<big_int> ar(m, 0);
+        vector<big_int> br(m, 0);
         for (unsigned int i = 0; i < m; ++i) {
-          Int fa = 0;
-          Int fb = 0;
+          big_int& fa = ar[i];
+          big_int& fb = br[i];
           for_each_bit(fo, [&](unsigned long t) {
             if (t * m + i < n) {
-              fa |= bit(t * m + i);
+              fa.set(t * m + i);
             }
           });
           for_each_bit(go, [&](unsigned long t) {
             if (t * m + i < n) {
-              fb |= bit(t * m + i);
+              fb.set(t * m + i);
             }
           });
-          ar[i] = fa;
-          br[i] = fb;
         }
         for (const auto& [fi, gi] : ia.gates) {
           gates.push_back({combine(fi, ar), combine(gi, br)});
         }
       }
 
-      std::vector<Int> w;
+      vector<big_int> w;
       for (unsigned int q = 0; q < 2 * n - 1; ++q) {
-        Int row = 0;
+        big_int row = 0;
         for (unsigned int r = 0; r < 2 * s - 1; ++r) {
           if (r * m > q) {
             continue;
@@ -1047,61 +1199,52 @@ namespace {
         }
         w.push_back(row);
       }
-      alg = Alg{n, n, std::move(gates), std::move(w)};
-    } else if (plan.kind == Plan::Kind::Crt) {
-      std::vector<std::pair<Int, Int>> gates;
-      std::vector<Int> resmasks;
-      std::vector<Int> evrows;
+      return Alg{n, n, move(gates), move(w)};
+    }
+    case Plan::Kind::Crt: {
+      vector<pair<big_int, big_int>> gates;
+      vector<big_int> resmasks;
+      vector<big_int> evrows;
       for (const Place& pk : plan.picks) {
         const auto [palg, ev]  = place_alg(pk, n, n);
         const unsigned int off = gates.size();
         gates.insert(gates.end(), palg.gates.begin(), palg.gates.end());
-        for (const Int& row : palg.w) {
+        for (const big_int& row : palg.w) {
           resmasks.push_back(row << off);
         }
         evrows.insert(evrows.end(), ev.begin(), ev.end());
       }
       const auto x = left_inverse(evrows, 2 * n - 1);
-      std::vector<Int> w;
+      vector<big_int> w;
       for (unsigned int q = 0; q < 2 * n - 1; ++q) {
         w.push_back(combine(x[q], resmasks));
       }
-      alg = Alg{n, n, std::move(gates), std::move(w)};
-    } else {
-      fail("invalid full_alg plan");
+      return Alg{n, n, move(gates), move(w)};
     }
-
-    cache[n] = alg;
-    return alg;
+    default:
+      fail("invalid plan");
+    }
   }
 
-  Alg short_alg(unsigned int n) {
-    static std::map<unsigned int, Alg> cache;
-    auto it = cache.find(n);
-    if (it != cache.end()) {
-      return it->second;
-    }
-
+  Alg short_alg_impl(unsigned int n) {
     const Plan plan = short_cost(n).plan;
-    Alg alg;
-    if (plan.kind == Plan::Kind::Base) {
-      alg = Alg{1, 1, {{1, 1}}, {1}};
-    } else if (plan.kind == Plan::Kind::Full) {
-      const Alg a = full_alg(n);
-      alg.na      = n;
-      alg.nb      = n;
-      alg.gates   = a.gates;
-      alg.w.assign(a.w.begin(), a.w.begin() + n);
-    } else if (plan.kind == Plan::Kind::ShortSplit) {
+    switch (plan.kind) {
+    case Plan::Kind::Base: {
+      return Alg{1, 1, {{1, 1}}, {1}};
+    }
+    case Plan::Kind::Full: {
+      return full_alg(n);
+    }
+    case Plan::Kind::ShortSplit: {
       const auto m = plan.m;
-      std::vector<Int> lo;
+      vector<big_int> lo;
       for (unsigned int i = 0; i < m; ++i) {
         lo.push_back(bit(i));
       }
       const Alg g1 = precompose(full_alg(m), lo, lo, n, n);
       const Alg s  = short_alg(n - m);
-      std::vector<Int> lo2;
-      std::vector<Int> hi2;
+      vector<big_int> lo2;
+      vector<big_int> hi2;
       for (unsigned int i = 0; i < n - m; ++i) {
         lo2.push_back(bit(i));
         hi2.push_back(bit(m + i));
@@ -1111,12 +1254,14 @@ namespace {
       const unsigned int o2 = g1.gates.size();
       const unsigned int o3 = o2 + g2.gates.size();
 
-      std::vector<std::pair<Int, Int>> gates = g1.gates;
+      vector<pair<big_int, big_int>> gates = g1.gates;
+      gates.reserve(gates.size() + g2.gates.size() + g3.gates.size());
       gates.insert(gates.end(), g2.gates.begin(), g2.gates.end());
       gates.insert(gates.end(), g3.gates.begin(), g3.gates.end());
-      std::vector<Int> w;
+
+      vector<big_int> w;
       for (unsigned int j = 0; j < n; ++j) {
-        Int row = 0;
+        big_int row{0};
         if (j <= 2 * m - 2) {
           row ^= g1.w[j];
         }
@@ -1126,22 +1271,22 @@ namespace {
         }
         w.push_back(row);
       }
-      alg = Alg{n, n, std::move(gates), std::move(w)};
-    } else {
-      fail("invalid short_alg plan");
+
+      return Alg{n, n, move(gates), move(w)};
     }
 
-    cache[n] = alg;
-    return alg;
+    default:
+      fail("invalid plan");
+    }
   }
 
-  std::pair<Alg, std::vector<Int>> place_alg(const Place& pk, unsigned int na, unsigned int nb) {
+  pair<Alg, vector<big_int>> place_alg(const Place& pk, unsigned int na, unsigned int nb) {
     const auto n2 = na + nb - 1;
     if (pk.kind == Place::Kind::Inf) {
-      check(pk.e <= std::min(na, nb), "infinity multiplicity exceeds input width");
-      std::vector<Int> rows_a;
-      std::vector<Int> rows_b;
-      std::vector<Int> ev;
+      check(pk.e <= min(na, nb), "infinity multiplicity exceeds input width");
+      vector<big_int> rows_a;
+      vector<big_int> rows_b;
+      vector<big_int> ev;
       for (unsigned int i = 0; i < pk.e; ++i) {
         rows_a.push_back(bit(na - 1 - i));
         rows_b.push_back(bit(nb - 1 - i));
@@ -1160,70 +1305,70 @@ namespace {
       }
 
       const auto p = pascal_rows(pk.e);
-      std::vector<Int> ina;
-      std::vector<Int> inb;
-      std::vector<Int> ev;
-      for (unsigned int i = 0; i < pk.e; ++i) {
-        ina.push_back(combine(p[i], ra));
-        inb.push_back(combine(p[i], rb));
-        ev.push_back(combine(p[i], rev));
+      vector<big_int> ina;
+      vector<big_int> inb;
+      vector<big_int> ev;
+      for (const auto& mask : p) {
+        ina.push_back(combine(mask, ra));
+        inb.push_back(combine(mask, rb));
+        ev.push_back(combine(mask, rev));
       }
       return {precompose(short_alg(pk.e), ina, inb, na, nb), ev};
     }
 
     const auto tower_cost = tower_field_cost(pdeg(pk.poly).value_or(0));
-    if (pk.e == 1 && tower_cost != 0 && tower_cost < full_cost(pdeg(pk.poly).value_or(0)).gates) {
+    if (pk.e == 1 && tower_cost && tower_cost < full_cost(pdeg(pk.poly).value_or(0)).gates) {
       return tower_place_alg(pk.poly, na, nb);
     }
 
-    const Int q     = poly_pow(pk.poly, pk.e);
+    const big_int q = poly_pow(pk.poly, pk.e);
     const auto d    = pdeg(q);
     const Alg full  = full_alg(*d);
     Alg alg         = precompose(full, reduction_rows(q, na), reduction_rows(q, nb), na, nb);
     const auto rout = reduction_rows(q, 2 * *d - 1);
-    std::vector<Int> w;
+    vector<big_int> w;
     for (unsigned int i = 0; (int)i < d; ++i) {
       w.push_back(combine(rout[i], alg.w));
     }
-    alg.w = std::move(w);
+    alg.w = move(w);
     return {alg, reduction_rows(q, n2)};
   }
 
   struct Tables {
-    std::vector<Int> f;
-    std::vector<Int> g;
-    std::vector<Int> w_tree;
-    std::vector<Int> w_gate;
+    vector<big_int> f;
+    vector<big_int> g;
+    vector<big_int> w_tree;
+    vector<big_int> w_gate;
     unsigned int n_tree = 0;
-    std::vector<std::pair<Place, unsigned int>> report;
+    vector<pair<Place, unsigned int>> report;
   };
 
-  Tables build_tables(unsigned int lambda, unsigned int wgrind, const Int& p,
-                      const std::vector<Int>& tree_moduli, const std::vector<Place>& picks) {
+  Tables build_tables(unsigned int lambda, unsigned int wgrind, const big_int& p,
+                      const vector<big_int>& tree_moduli, const vector<Place>& picks) {
     const unsigned int na = lambda;
     const unsigned int nb = lambda - wgrind;
     unsigned int ntree    = 0;
-    for (const Int& m : tree_moduli) {
+    for (const big_int& m : tree_moduli) {
       ntree += pdeg(m).value_or(0);
     }
     check(ntree == nb, "tree degrees must sum to lambda - wgrind");
 
     const auto n2 = na + nb - 1;
-    std::vector<Int> evrows;
-    for (const Int& m : tree_moduli) {
+    vector<big_int> evrows;
+    for (const big_int& m : tree_moduli) {
       const auto rows = reduction_rows(m, n2);
       evrows.insert(evrows.end(), rows.begin(), rows.end());
     }
 
-    std::vector<std::pair<Int, Int>> gates;
-    std::vector<Int> resmasks;
-    std::vector<std::pair<Place, unsigned int>> report;
+    vector<pair<big_int, big_int>> gates;
+    vector<big_int> resmasks;
+    vector<pair<Place, unsigned int>> report;
     for (const Place& pk : picks) {
       const auto [palg, ev]  = place_alg(pk, na, nb);
       const unsigned int off = gates.size();
       gates.insert(gates.end(), palg.gates.begin(), palg.gates.end());
-      for (const Int& row : palg.w) {
-        resmasks.push_back(row << off);
+      for (const big_int& row : palg.w) {
+        resmasks.emplace_back(row << off);
       }
       evrows.insert(evrows.end(), ev.begin(), ev.end());
       report.push_back({pk, palg.gates.size()});
@@ -1231,201 +1376,202 @@ namespace {
 
     const auto x   = left_inverse(evrows, n2);
     const auto red = reduction_rows(p, n2);
-    std::vector<Int> wt(lambda, 0);
-    std::vector<Int> wg(lambda, 0);
+    vector<big_int> wt(lambda, 0);
+    vector<big_int> wg(lambda, 0);
     for (unsigned int r = 0; r < lambda; ++r) {
-      const Int sel = combine(red[r], x);
+      const big_int sel = combine(red[r], x);
       for_each_bit(sel, [&](unsigned long idx) {
         if (idx < ntree) {
-          wt[r] |= bit(idx);
+          wt[r].set(idx);
         } else {
           wg[r] ^= resmasks[idx - ntree];
         }
       });
     }
 
-    std::vector<Int> f;
-    std::vector<Int> g;
+    vector<big_int> f;
+    vector<big_int> g;
     f.reserve(gates.size());
     g.reserve(gates.size());
     const auto cols = crt_lift_cols(tree_moduli);
     for (const auto& [fa, fb] : gates) {
       f.push_back(fa);
-      Int row = 0;
+      big_int row;
       for (unsigned int j = 0; j < nb; ++j) {
-        if (parity(fb & cols[j]) != 0) {
-          row |= bit(j);
+        if (parity(fb & cols[j])) {
+          row.set(j);
         }
       }
-      g.push_back(row);
+      g.emplace_back(row);
     }
-    return {std::move(f), std::move(g), std::move(wt), std::move(wg), ntree, std::move(report)};
+    return {move(f), move(g), move(wt), move(wg), ntree, move(report)};
   }
 
-  std::vector<Int> wcrt_rows(const std::vector<Int>& tree_moduli, unsigned int lambda) {
+  vector<big_int> wcrt_rows(const vector<big_int>& tree_moduli, unsigned int lambda) {
     const auto cols = crt_lift_cols(tree_moduli);
-    std::vector<Int> rows;
+    vector<big_int> rows;
     rows.reserve(lambda);
     for (unsigned int r = 0; r < lambda; ++r) {
-      Int row = 0;
+      big_int row;
       for (unsigned int j = 0; j < cols.size(); ++j) {
-        if (test_bit(cols[j], r)) {
-          row |= bit(j);
+        if (cols[j].test(r)) {
+          row.set(j);
         }
       }
-      rows.push_back(row);
+      rows.emplace_back(row);
     }
     return rows;
   }
 
-  void prune(std::vector<Int>& f, std::vector<Int>& g, std::vector<Int>& wg) {
-    std::map<std::pair<Int, Int>, int> canon;
+  void prune(vector<big_int>& f, vector<big_int>& g, vector<big_int>& wg) {
+    map<pair<big_int, big_int>, int> canon;
     for (unsigned int i = 0; i < f.size(); ++i) {
-      if (f[i] != 0 && g[i] != 0) {
-        const auto key = std::make_pair(f[i], g[i]);
+      if (!f[i].is_zero() && !g[i].is_zero()) {
+        const auto key = make_pair(f[i], g[i]);
         if (canon.find(key) == canon.end()) {
           canon[key] = i;
         }
       }
     }
 
-    std::vector<Int> wg1;
+    vector<big_int> wg1;
     wg1.reserve(wg.size());
-    for (const Int& row : wg) {
-      Int nr = 0;
+    for (const big_int& row : wg) {
+      big_int nr;
       for_each_bit(row, [&](unsigned long i) {
-        if (f[i] != 0 && g[i] != 0) {
-          nr ^= bit(canon[std::make_pair(f[i], g[i])]);
+        if (!f[i].is_zero() && !g[i].is_zero()) {
+          nr.flip(canon[make_pair(f[i], g[i])]);
         }
       });
-      wg1.push_back(nr);
+      wg1.emplace_back(nr);
     }
 
-    Int used = 0;
-    for (const Int& row : wg1) {
+    big_int used = 0;
+    for (const big_int& row : wg1) {
       used |= row;
     }
 
-    std::map<unsigned int, unsigned int> newidx;
-    std::vector<Int> f2;
-    std::vector<Int> g2;
+    map<unsigned int, unsigned int> newidx;
+    vector<big_int> f2;
+    vector<big_int> g2;
     for (unsigned int i = 0; i < f.size(); ++i) {
-      if (test_bit(used, i)) {
+      if (used.test(i)) {
         newidx[i] = f2.size();
         f2.push_back(f[i]);
         g2.push_back(g[i]);
       }
     }
 
-    std::vector<Int> wg2;
+    vector<big_int> wg2;
     wg2.reserve(wg1.size());
-    for (const Int& row : wg1) {
-      Int nr = 0;
-      for_each_bit(row, [&](int i) { nr |= bit(newidx[i]); });
-      wg2.push_back(nr);
+    for (const big_int& row : wg1) {
+      big_int nr = 0;
+      for_each_bit(row, [&](unsigned long i) { nr.set(newidx[i]); });
+      wg2.emplace_back(nr);
     }
 
-    f  = std::move(f2);
-    g  = std::move(g2);
-    wg = std::move(wg2);
+    f  = move(f2);
+    g  = move(g2);
+    wg = move(wg2);
   }
 
-  std::string to_hex(Int v) {
-    if (v == 0) {
-      return "0";
-    }
-    static constexpr char digits[] = "0123456789abcdef";
-    std::string out;
-    while (v != 0) {
-      out.push_back(digits[(v & 0xf).convert_to<unsigned>()]);
-      v >>= 4;
-    }
-    std::reverse(out.begin(), out.end());
-    return out;
-  }
-
-  std::string word_hex(uint64_t v) {
-    std::ostringstream ss;
-    ss << "0x" << std::hex << std::nouppercase << std::setfill('0') << std::setw(16) << v << "ULL";
-    return ss.str();
-  }
-
-  uint64_t word_at(const Int& v, unsigned int word) {
-    return ((v >> (64 * word)) & ((Int(1) << 64) - 1)).convert_to<uint64_t>();
+  uint64_t word_at(const big_int& v, unsigned int word) {
+    return v.word_at(word);
   }
 
   constexpr unsigned int words_of(unsigned int width) {
     return (width + 63) / 64;
   }
 
-  std::string upper_identifier(std::string s) {
+  string upper_identifier(string s) {
     for (char& c : s) {
       if (c == '-') {
         c = '_';
       } else {
-        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        c = static_cast<char>(toupper(static_cast<unsigned char>(c)));
       }
     }
     return s;
   }
 
-  std::string prefix_for_name(const std::string& name) {
+  string prefix_for_name(const string& name) {
     return "FAEST_" + upper_identifier(name);
   }
 
-  std::string row_literal(const Int& r, unsigned int words) {
-    std::ostringstream ss;
+  struct uint64_printer {
+    uint64_t value;
+  };
+
+  ostream& operator<<(ostream& ofs, const uint64_printer& p) {
+    const auto flags = ofs.flags();
+    const auto fill  = ofs.fill();
+    ofs << "UINT64_C(0x" << hex << nouppercase << setfill('0') << setw(16) << p.value << ")";
+    ofs.flags(flags);
+    ofs.fill(fill);
+    return ofs;
+  }
+
+  struct uint16_printer {
+    uint16_t value;
+  };
+
+  ostream& operator<<(ostream& ofs, const uint16_printer& p) {
+    const auto flags = ofs.flags();
+    const auto fill  = ofs.fill();
+    ofs << "UINT16_C(0x" << hex << nouppercase << setfill('0') << setw(4) << p.value << ")";
+    ofs.flags(flags);
+    ofs.fill(fill);
+    return ofs;
+  }
+
+  string row_literal(const big_int& r, unsigned int words) {
+    ostringstream ss;
     ss << "{ ";
     for (unsigned int w = 0; w < words; ++w) {
-      if (w != 0) {
-        ss << ", ";
-      }
-      ss << word_hex(word_at(r, w));
+      ss << uint64_printer{word_at(r, w)} << ", ";
     }
     ss << " }";
     return ss.str();
   }
 
   struct EmitTable {
-    std::string suffix;
-    const std::vector<Int>& rows;
-    int words = 0;
-    std::string rows_macro;
-    std::string words_macro;
+    string suffix;
+    const vector<big_int>& rows;
+    unsigned int words;
+    string rows_macro;
+    string words_macro;
   };
 
-  std::string emit_c(const std::string& path, const std::string& name, const std::vector<Int>& f,
-                     const std::vector<Int>& g, const std::vector<Int>& wt,
-                     const std::vector<Int>& wg, const std::vector<Int>& tree_moduli,
-                     unsigned int lambda, unsigned int wgrind, unsigned int ntree) {
-    const std::vector<Int> wcrt = wcrt_rows(tree_moduli, lambda);
-    const Int m_tree            = mtree_poly(tree_moduli);
-    const unsigned int ng       = f.size();
-    const unsigned int nb       = lambda - wgrind;
-    const unsigned int tau      = tree_moduli.size();
-    for (const Int& m : tree_moduli) {
-      check(pdeg(m).has_value() && pdeg(m).value() < 64,
-            "tree modulus degree >= 64 does not fit one uint64 word");
+  string emit_c(const string& path, const string& name, const vector<big_int>& f,
+                const vector<big_int>& g, const vector<big_int>& wt, const vector<big_int>& wg,
+                const vector<big_int>& tree_moduli, unsigned int lambda, unsigned int wgrind,
+                unsigned int ntree) {
+    const vector<big_int> wcrt = wcrt_rows(tree_moduli, lambda);
+    const big_int m_tree       = mtree_poly(tree_moduli);
+    const unsigned int ng      = f.size();
+    const unsigned int tau     = tree_moduli.size();
+    for (const big_int& m : tree_moduli) {
+      check(pdeg(m).has_value() && pdeg(m).value() < 16,
+            "tree modulus degree >= 16 does not fit one uint16_t");
     }
 
-    const int w_f  = words_of(lambda);
-    const int w_g  = words_of(nb);
-    const int w_wt = words_of(ntree);
-    const int w_wg = words_of(ng);
-    const int w_wc = words_of(nb);
-    const int w_mt = words_of(*pdeg(m_tree) + 1);
+    const auto w_f  = words_of(lambda);
+    const auto w_g  = words_of(lambda - wgrind);
+    const auto w_wt = words_of(ntree);
+    const auto w_wg = words_of(ng);
+    const auto w_wc = w_g;
+    const auto w_mt = words_of(*pdeg(m_tree) + 1);
 
-    const std::string pfx   = prefix_for_name(name);
-    const std::string guard = pfx + "_TABLES_H";
-    std::string src_path;
+    const string pfx = prefix_for_name(name);
+    string src_path;
     if (path.size() >= 2 && path.substr(path.size() - 2) == ".h") {
       src_path = path.substr(0, path.size() - 2) + ".c";
     } else {
       src_path = path + ".c";
     }
-    const std::string header_name = std::filesystem::path(path).filename().string();
+    const string header_name = filesystem::path(path).filename().string();
 
-    const std::array<EmitTable, 5> tables = {{
+    const array<EmitTable, 5> tables{{
         {"F", f, w_f, pfx + "_NGATES", pfx + "_F_WORDS"},
         {"G", g, w_g, pfx + "_NGATES", pfx + "_G_WORDS"},
         {"W_TREE", wt, w_wt, pfx + "_LAMBDA", pfx + "_W_TREE_WORDS"},
@@ -1433,7 +1579,7 @@ namespace {
         {"W_CRT", wcrt, w_wc, pfx + "_LAMBDA", pfx + "_W_CRT_WORDS"},
     }};
 
-    std::ofstream out(path);
+    ofstream out(path);
     check(out.good(), "failed to open header for writing: " + path);
     out << "/* generated by vole_mult_tables.cpp: " << name << "\n"
         << " *\n"
@@ -1443,12 +1589,10 @@ namespace {
         << " * little-endian into uint64 words -- bit i sits in word i/64\n"
         << " * at bit position i%64, and word 0 holds the low bits.\n"
         << " */\n";
-    out << "#ifndef " << guard << "\n#define " << guard << "\n\n";
+    out << "#ifndef " << pfx << "_TABLES_H\n#define " << pfx << "_TABLES_H\n\n";
     out << "#include <stdint.h>\n\n";
     out << "#define " << pfx << "_NGATES " << ng << "\n";
     out << "#define " << pfx << "_WGRIND " << wgrind << "\n";
-    out << "#define " << pfx << "_NDELTA_BITS " << nb << "\n";
-    out << "#define " << pfx << "_NTREE_BITS " << ntree << "\n";
     out << "#define " << pfx << "_F_WORDS " << w_f << "\n";
     out << "#define " << pfx << "_G_WORDS " << w_g << "\n";
     out << "#define " << pfx << "_W_TREE_WORDS " << w_wt << "\n";
@@ -1459,27 +1603,21 @@ namespace {
     for (const auto& tbl : tables) {
       out << "static const uint64_t " << pfx << "_" << tbl.suffix << "[" << tbl.rows_macro << "]["
           << tbl.words_macro << "] = {\n";
-      for (const Int& row : tbl.rows) {
+      for (const big_int& row : tbl.rows) {
         out << "  " << row_literal(row, tbl.words) << ",\n";
       }
       out << "};\n\n";
     }
 
-    out << "static const uint64_t " << pfx << "_TREE_MODULI[" << pfx << "_TAU] = { ";
+    out << "static const uint16_t " << pfx << "_TREE_MODULI[" << pfx << "_TAU] = { ";
     for (unsigned int i = 0; i < tau; ++i) {
-      if (i != 0) {
-        out << ", ";
-      }
-      out << "0x" << to_hex(tree_moduli[i]) << "ULL";
+      out << uint16_printer{static_cast<uint16_t>(word_at(tree_moduli[i], 0))} << ", ";
     }
     out << " };\n\n";
 
     out << "static const uint64_t " << pfx << "_M_TREE[" << pfx << "_M_TREE_WORDS] = { ";
-    for (int w = 0; w < w_mt; ++w) {
-      if (w != 0) {
-        out << ", ";
-      }
-      out << word_hex(word_at(m_tree, w));
+    for (unsigned int w = 0; w < w_mt; ++w) {
+      out << uint64_printer{word_at(m_tree, w)} << ", ";
     }
     out << " };\n\n";
     out << "#endif\n";
@@ -1493,24 +1631,24 @@ namespace {
     unsigned int wgrind;
   };
 
-  const std::map<std::string, Preset> PRESETS = {
-      {"128s", {FAEST_128S_LAMBDA, FAEST_128S_TAU, FAEST_128S_W_GRIND}},
-      {"128f", {FAEST_128F_LAMBDA, FAEST_128F_TAU, FAEST_128F_W_GRIND}},
-      {"192s", {FAEST_192S_LAMBDA, FAEST_192S_TAU, FAEST_192S_W_GRIND}},
-      {"192f", {FAEST_192F_LAMBDA, FAEST_192F_TAU, FAEST_192F_W_GRIND}},
-      {"256s", {FAEST_256S_LAMBDA, FAEST_256S_TAU, FAEST_256S_W_GRIND}},
-      {"256f", {FAEST_256F_LAMBDA, FAEST_256F_TAU, FAEST_256F_W_GRIND}},
-      {"em_192s", {FAEST_EM_192S_LAMBDA, FAEST_EM_192S_TAU, FAEST_EM_192F_W_GRIND}},
-      {"em_192f", {FAEST_EM_192F_LAMBDA, FAEST_EM_192F_TAU, FAEST_EM_192S_W_GRIND}},
+  const map<string, Preset> PRESETS = {
+      {"128s", {FAEST_128_LAMBDA, FAEST_128S_TAU, FAEST_128S_W_GRIND}},
+      {"128f", {FAEST_128_LAMBDA, FAEST_128F_TAU, FAEST_128F_W_GRIND}},
+      {"192s", {FAEST_192_LAMBDA, FAEST_192S_TAU, FAEST_192S_W_GRIND}},
+      {"192f", {FAEST_192_LAMBDA, FAEST_192F_TAU, FAEST_192F_W_GRIND}},
+      {"256s", {FAEST_256_LAMBDA, FAEST_256S_TAU, FAEST_256S_W_GRIND}},
+      {"256f", {FAEST_256_LAMBDA, FAEST_256F_TAU, FAEST_256F_W_GRIND}},
+      {"em_192s", {FAEST_192_LAMBDA, FAEST_EM_192S_TAU, FAEST_EM_192F_W_GRIND}},
+      {"em_192f", {FAEST_192_LAMBDA, FAEST_EM_192F_TAU, FAEST_EM_192S_W_GRIND}},
   };
 
-  std::vector<std::pair<unsigned int, unsigned int>>
-  faest_tree_spec(unsigned int lambda, unsigned int tau, unsigned int wgrind) {
+  vector<pair<unsigned int, unsigned int>> faest_tree_spec(unsigned int lambda, unsigned int tau,
+                                                           unsigned int wgrind) {
     const unsigned int n    = lambda - wgrind;
     const unsigned int d1   = n / tau + 1;
     const unsigned int tau1 = n % tau;
-    std::vector<std::pair<unsigned int, unsigned int>> spec;
-    if (tau1 != 0) {
+    vector<pair<unsigned int, unsigned int>> spec;
+    if (tau1) {
       spec.push_back({d1, tau1});
     }
     spec.push_back({d1 - 1, tau - tau1});
@@ -1518,36 +1656,33 @@ namespace {
   }
 
   struct Args {
-    int maxd = 10;
-    int maxe = 10;
-    std::string preset;
-    std::string emit_c_path;
+    string preset;
+    string emit_c_path;
   };
 
   void print_help(const char* prog) {
-    std::cout << "Usage:\n"
-              << "  " << prog << " --preset NAME --emit-c FILE.h\n\n"
-              << "Search + frozen C table generation for CRT-based F_{2^lambda} VOLE "
-                 "multiplication.\n\n"
-              << "Options:\n"
-              << "  --preset NAME         one of 128s, 128f, 192s, 192f, 256s, 256f, 192s_em\n"
-              << "  --emit-c FILE.h       emit C header and companion source\n";
+    cout << "Usage:\n"
+         << "  " << prog << " --preset NAME --emit-c FILE.h\n\n"
+         << "Search + frozen C table generation for CRT-based F_{2^lambda} VOLE multiplication.\n\n"
+         << "Options:\n"
+         << "  --preset NAME         one of 128s, 128f, 192s, 192f, 256s, 256f, em_192s, em_192f\n"
+         << "  --emit-c FILE.h       emit C header and companion source\n";
   }
 
   Args parse_args(int argc, char** argv) {
     Args args;
     for (int i = 1; i < argc; ++i) {
-      const std::string a = argv[i];
-      auto need_value     = [&](const std::string& opt) {
+      const string a  = argv[i];
+      auto need_value = [&](const string& opt) {
         if (i + 1 >= argc) {
           fail(opt + " requires a value");
         }
-        return std::string(argv[++i]);
+        return argv[++i];
       };
 
       if (a == "--help" || a == "-h") {
         print_help(argv[0]);
-        std::exit(0);
+        exit(0);
       } else if (a == "--preset") {
         args.preset = need_value(a);
       } else if (a == "--emit-c") {
@@ -1559,54 +1694,56 @@ namespace {
     return args;
   }
 
-  void run_set(const std::string& name, unsigned int lambda, unsigned int wgrind,
-               const std::vector<std::pair<unsigned int, unsigned int>>& tree_spec,
-               const Args& args, const std::string& c_path) {
+  constexpr unsigned int MAX_E = 10;
+  constexpr unsigned int MAX_D = 10;
+
+  void run_set(const string& name, unsigned int lambda, unsigned int wgrind,
+               const vector<pair<unsigned int, unsigned int>>& tree_spec, const string& c_path) {
     unsigned int tree_sum = 0;
     for (const auto& [d, c] : tree_spec) {
       tree_sum += d * c;
     }
     check(tree_sum == lambda - wgrind,
-          "tree degrees sum to " + std::to_string(tree_sum) +
-              ", expected lambda - wgrind = " + std::to_string(lambda - wgrind));
+          "tree degrees sum to " + to_string(tree_sum) +
+              ", expected lambda - wgrind = " + to_string(lambda - wgrind));
 
     const unsigned int n2      = lambda + (lambda - wgrind) - 1;
     const unsigned int deficit = n2 - tree_sum;
 
-    std::vector<Int> tree_moduli;
+    vector<big_int> tree_moduli;
     for (const auto& [d, c] : tree_spec) {
       const auto& pool = irreducibles_of_degree(d);
       if (c > pool.size()) {
-        fail("only " + std::to_string(pool.size()) + " irreducibles of degree " +
-             std::to_string(d) + " over F_2; cannot pick " + std::to_string(c));
+        fail("only " + to_string(pool.size()) + " irreducibles of degree " + to_string(d) +
+             " over F_2; cannot pick " + to_string(c));
       }
       tree_moduli.insert(tree_moduli.end(), pool.begin(), pool.begin() + c);
     }
-    std::set<Int> treeset(tree_moduli.begin(), tree_moduli.end());
-    std::map<unsigned int, std::vector<Int>> pools;
-    for (int d = 2; d <= args.maxd; ++d) {
-      for (const Int& q : irreducibles_of_degree(d)) {
+    set<big_int> treeset(tree_moduli.begin(), tree_moduli.end());
+    map<unsigned int, vector<big_int>> pools;
+    for (unsigned int d = 2; d <= MAX_D; ++d) {
+      for (const big_int& q : irreducibles_of_degree(d)) {
         if (treeset.find(q) == treeset.end()) {
           pools[d].push_back(q);
         }
       }
     }
 
-    const Int p = faest_modulus(lambda);
-    auto res    = crt_search(deficit, args.maxe, args.maxd, pools);
-    check(res.has_value(), "portfolio search failed; raise --maxd/--maxe");
-    const std::vector<Place>& picks = res->second;
+    const big_int p = faest_modulus(lambda);
+    auto res        = crt_search(deficit, MAX_E, MAX_D, pools);
+    check(res.has_value(), "portfolio search failed; raise MAX_E, MAX_D");
+    const vector<Place>& picks = res->second;
 
     Tables tables = build_tables(lambda, wgrind, p, tree_moduli, picks);
     prune(tables.f, tables.g, tables.w_gate);
 
-    std::map<std::pair<std::string, unsigned int>, std::array<unsigned int, 3>> agg;
+    map<pair<string, unsigned int>, array<unsigned int, 3>> agg;
     for (const auto& [pk, gates] : tables.report) {
       const auto d =
           pk.kind == Place::Kind::Inf || pk.kind == Place::Kind::Lin ? pk.e : *pdeg(pk.poly) * pk.e;
-      std::string type;
+      string type;
       if (pk.kind == Place::Kind::Irr) {
-        type = "irr deg " + std::to_string(*pdeg(pk.poly));
+        type = "irr deg " + to_string(*pdeg(pk.poly));
       } else if (pk.kind == Place::Kind::Inf) {
         type = "inf";
       } else {
@@ -1618,12 +1755,10 @@ namespace {
       row[2] += gates;
     }
 
-    const std::vector<Int> wcrt = wcrt_rows(tree_moduli, lambda);
-
+    const auto wcrt = wcrt_rows(tree_moduli, lambda);
     emit_c(c_path, name, tables.f, tables.g, tables.w_tree, tables.w_gate, tree_moduli, lambda,
            wgrind, tables.n_tree);
   }
-
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1639,7 +1774,7 @@ int main(int argc, char** argv) {
       fail("unknown preset: " + args.preset);
     }
     const auto tree_spec = faest_tree_spec(it->second.lambda, it->second.tau, it->second.wgrind);
-    run_set(args.preset, it->second.lambda, it->second.wgrind, tree_spec, args, args.emit_c_path);
+    run_set(args.preset, it->second.lambda, it->second.wgrind, tree_spec, args.emit_c_path);
     return 0;
   } catch (const std::exception& e) {
     std::cerr << "vole_mult_tables: " << e.what() << "\n";

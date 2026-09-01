@@ -204,7 +204,7 @@ void vole_commit(const uint8_t* rootKey, const uint8_t* iv, unsigned int ellhat,
       }
 
       uint8_t reduced_out[(MAX_DEPTH * 2 + 7) / 8] = {0};
-      bf2_poly_reduce(reduced_out, acc, deg * 2, &params->TREE_MODULI[tau_idx], deg + 1);
+      bf2_poly_reduce(reduced_out, acc, deg * 2, params->TREE_MODULI[tau_idx], deg + 1);
 
       insert_bit_slice(r_tilde + m * lambda_minus_w_grind_bytes, bit_idx,
                        extract_bit_slice(reduced_out, 0, deg), deg);
@@ -407,7 +407,7 @@ bool vole_reconstruct(uint8_t* com, uint8_t** Q_dest, const uint8_t* iv, const u
       }
 
       uint8_t reduced_out[(MAX_DEPTH * 2 + 7) / 8] = {0};
-      bf2_poly_reduce(reduced_out, acc, deg * 2, &params->TREE_MODULI[tau_idx], deg + 1);
+      bf2_poly_reduce(reduced_out, acc, deg * 2, params->TREE_MODULI[tau_idx], deg + 1);
 
       insert_bit_slice(r_tilde_prime + m * lambda_minus_w_grind_bytes, bit_idx,
                        extract_bit_slice(reduced_out, 0, deg), deg);

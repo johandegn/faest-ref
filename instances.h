@@ -77,7 +77,7 @@ typedef struct faest_paramset_t {
   const uint64_t* const W_TREE;
   const uint64_t* const W_GATE;
   const uint64_t* const W_CRT;
-  const uint64_t* const TREE_MODULI;
+  const uint16_t* const TREE_MODULI;
   const uint64_t* const M_TREE;
   uint8_t f_words;
   uint8_t g_words;
