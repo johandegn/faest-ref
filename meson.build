@@ -645,6 +645,7 @@ else
     faest_sources += files(
       'sha3/opt64/KeccakP-1600-opt64.c',
     )
+    defines += ['-DKeccakP1660_plain64_fullUnrolling']
   elif sha3 == 'plain32'
     faest_sources += files(
       'sha3/plain32/KeccakP-1600-inplace32BI.c',
@@ -655,7 +656,6 @@ else
     )
   endif
 
-  # 32 bit ARM is in general unhappy with unaligned access, hence disable it in this case
   if host_machine.cpu_family() == 'arm'
     defines += '-DDISABLE_MISALIGNED_ACCESS=1'
   endif

@@ -15,11 +15,11 @@ http://creativecommons.org/publicdomain/zero/1.0/
 */
 
 #define declareABCDE \
-    uint64_t Aba, Abe, Abi, Abo, Abu; \
-    uint64_t Aga, Age, Agi, Ago, Agu; \
-    uint64_t Aka, Ake, Aki, Ako, Aku; \
-    uint64_t Ama, Ame, Ami, Amo, Amu; \
-    uint64_t Asa, Ase, Asi, Aso, Asu; \
+    uint64_t Aba = 0, Abe = 0, Abi = 0, Abo = 0, Abu = 0; \
+    uint64_t Aga = 0, Age = 0, Agi = 0, Ago = 0, Agu = 0; \
+    uint64_t Aka = 0, Ake = 0, Aki = 0, Ako = 0, Aku = 0; \
+    uint64_t Ama = 0, Ame = 0, Ami = 0, Amo = 0, Amu = 0; \
+    uint64_t Asa = 0, Ase = 0, Asi = 0, Aso = 0, Asu = 0; \
     uint64_t Bba, Bbe, Bbi, Bbo, Bbu; \
     uint64_t Bga, Bge, Bgi, Bgo, Bgu; \
     uint64_t Bka, Bke, Bki, Bko, Bku; \
@@ -539,29 +539,53 @@ http://creativecommons.org/publicdomain/zero/1.0/
     X##so = Y##so; \
     X##su = Y##su; \
 
+/*
+ * Read the little-endian lane number i from the input byte stream,
+ * without requiring the pointer to be aligned. On little-endian
+ * platforms, XKCP_load64() lets the compiler emit a single (possibly
+ * misaligned) load where the architecture supports it, and a safe byte
+ * sequence elsewhere (on some platforms such as Sparc or MIPS,
+ * dereferencing an uint64_t on a buffer not aligned on the word size
+ * will induce a 'bus error'). On big-endian platforms, the lane is read
+ * and swapped byte per byte.
+ */
+#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
+#define loadInputLane(input, i) XKCP_load64((input)+8*(i))
+#else
+#define loadInputLane(input, i)                                      \
+        (  ((uint64_t) ((input)[8*(i)+7]) << 56 )                    \
+        |  ((uint64_t) ((input)[8*(i)+6]) << 48 )                    \
+        |  ((uint64_t) ((input)[8*(i)+5]) << 40 )                    \
+        |  ((uint64_t) ((input)[8*(i)+4]) << 32 )                    \
+        |  ((uint64_t) ((input)[8*(i)+3]) << 24 )                    \
+        |  ((uint64_t) ((input)[8*(i)+2]) << 16 )                    \
+        |  ((uint64_t) ((input)[8*(i)+1]) <<  8 )                    \
+        |  ((uint64_t) ((input)[8*(i)+0])))
+#endif
+
 #define addInput(X, input, laneCount) \
     if (laneCount == 21) { \
-        X##ba ^= HTOLE64(input[ 0]); \
-        X##be ^= HTOLE64(input[ 1]); \
-        X##bi ^= HTOLE64(input[ 2]); \
-        X##bo ^= HTOLE64(input[ 3]); \
-        X##bu ^= HTOLE64(input[ 4]); \
-        X##ga ^= HTOLE64(input[ 5]); \
-        X##ge ^= HTOLE64(input[ 6]); \
-        X##gi ^= HTOLE64(input[ 7]); \
-        X##go ^= HTOLE64(input[ 8]); \
-        X##gu ^= HTOLE64(input[ 9]); \
-        X##ka ^= HTOLE64(input[10]); \
-        X##ke ^= HTOLE64(input[11]); \
-        X##ki ^= HTOLE64(input[12]); \
-        X##ko ^= HTOLE64(input[13]); \
-        X##ku ^= HTOLE64(input[14]); \
-        X##ma ^= HTOLE64(input[15]); \
-        X##me ^= HTOLE64(input[16]); \
-        X##mi ^= HTOLE64(input[17]); \
-        X##mo ^= HTOLE64(input[18]); \
-        X##mu ^= HTOLE64(input[19]); \
-        X##sa ^= HTOLE64(input[20]); \
+        X##ba ^= loadInputLane(input, 0); \
+        X##be ^= loadInputLane(input, 1); \
+        X##bi ^= loadInputLane(input, 2); \
+        X##bo ^= loadInputLane(input, 3); \
+        X##bu ^= loadInputLane(input, 4); \
+        X##ga ^= loadInputLane(input, 5); \
+        X##ge ^= loadInputLane(input, 6); \
+        X##gi ^= loadInputLane(input, 7); \
+        X##go ^= loadInputLane(input, 8); \
+        X##gu ^= loadInputLane(input, 9); \
+        X##ka ^= loadInputLane(input, 10); \
+        X##ke ^= loadInputLane(input, 11); \
+        X##ki ^= loadInputLane(input, 12); \
+        X##ko ^= loadInputLane(input, 13); \
+        X##ku ^= loadInputLane(input, 14); \
+        X##ma ^= loadInputLane(input, 15); \
+        X##me ^= loadInputLane(input, 16); \
+        X##mi ^= loadInputLane(input, 17); \
+        X##mo ^= loadInputLane(input, 18); \
+        X##mu ^= loadInputLane(input, 19); \
+        X##sa ^= loadInputLane(input, 20); \
     } \
     else if (laneCount < 16) { \
         if (laneCount < 8) { \
@@ -570,165 +594,165 @@ http://creativecommons.org/publicdomain/zero/1.0/
                     if (laneCount < 1) { \
                     } \
                     else { \
-                        X##ba ^= HTOLE64(input[ 0]); \
+                        X##ba ^= loadInputLane(input, 0); \
                     } \
                 } \
                 else { \
-                    X##ba ^= HTOLE64(input[ 0]); \
-                    X##be ^= HTOLE64(input[ 1]); \
+                    X##ba ^= loadInputLane(input, 0); \
+                    X##be ^= loadInputLane(input, 1); \
                     if (laneCount < 3) { \
                     } \
                     else { \
-                        X##bi ^= HTOLE64(input[ 2]); \
+                        X##bi ^= loadInputLane(input, 2); \
                     } \
                 } \
             } \
             else { \
-                X##ba ^= HTOLE64(input[ 0]); \
-                X##be ^= HTOLE64(input[ 1]); \
-                X##bi ^= HTOLE64(input[ 2]); \
-                X##bo ^= HTOLE64(input[ 3]); \
+                X##ba ^= loadInputLane(input, 0); \
+                X##be ^= loadInputLane(input, 1); \
+                X##bi ^= loadInputLane(input, 2); \
+                X##bo ^= loadInputLane(input, 3); \
                 if (laneCount < 6) { \
                     if (laneCount < 5) { \
                     } \
                     else { \
-                        X##bu ^= HTOLE64(input[ 4]); \
+                        X##bu ^= loadInputLane(input, 4); \
                     } \
                 } \
                 else { \
-                    X##bu ^= HTOLE64(input[ 4]); \
-                    X##ga ^= HTOLE64(input[ 5]); \
+                    X##bu ^= loadInputLane(input, 4); \
+                    X##ga ^= loadInputLane(input, 5); \
                     if (laneCount < 7) { \
                     } \
                     else { \
-                        X##ge ^= HTOLE64(input[ 6]); \
+                        X##ge ^= loadInputLane(input, 6); \
                     } \
                 } \
             } \
         } \
         else { \
-            X##ba ^= HTOLE64(input[ 0]); \
-            X##be ^= HTOLE64(input[ 1]); \
-            X##bi ^= HTOLE64(input[ 2]); \
-            X##bo ^= HTOLE64(input[ 3]); \
-            X##bu ^= HTOLE64(input[ 4]); \
-            X##ga ^= HTOLE64(input[ 5]); \
-            X##ge ^= HTOLE64(input[ 6]); \
-            X##gi ^= HTOLE64(input[ 7]); \
+            X##ba ^= loadInputLane(input, 0); \
+            X##be ^= loadInputLane(input, 1); \
+            X##bi ^= loadInputLane(input, 2); \
+            X##bo ^= loadInputLane(input, 3); \
+            X##bu ^= loadInputLane(input, 4); \
+            X##ga ^= loadInputLane(input, 5); \
+            X##ge ^= loadInputLane(input, 6); \
+            X##gi ^= loadInputLane(input, 7); \
             if (laneCount < 12) { \
                 if (laneCount < 10) { \
                     if (laneCount < 9) { \
                     } \
                     else { \
-                        X##go ^= HTOLE64(input[ 8]); \
+                        X##go ^= loadInputLane(input, 8); \
                     } \
                 } \
                 else { \
-                    X##go ^= HTOLE64(input[ 8]); \
-                    X##gu ^= HTOLE64(input[ 9]); \
+                    X##go ^= loadInputLane(input, 8); \
+                    X##gu ^= loadInputLane(input, 9); \
                     if (laneCount < 11) { \
                     } \
                     else { \
-                        X##ka ^= HTOLE64(input[10]); \
+                        X##ka ^= loadInputLane(input, 10); \
                     } \
                 } \
             } \
             else { \
-                X##go ^= HTOLE64(input[ 8]); \
-                X##gu ^= HTOLE64(input[ 9]); \
-                X##ka ^= HTOLE64(input[10]); \
-                X##ke ^= HTOLE64(input[11]); \
+                X##go ^= loadInputLane(input, 8); \
+                X##gu ^= loadInputLane(input, 9); \
+                X##ka ^= loadInputLane(input, 10); \
+                X##ke ^= loadInputLane(input, 11); \
                 if (laneCount < 14) { \
                     if (laneCount < 13) { \
                     } \
                     else { \
-                        X##ki ^= HTOLE64(input[12]); \
+                        X##ki ^= loadInputLane(input, 12); \
                     } \
                 } \
                 else { \
-                    X##ki ^= HTOLE64(input[12]); \
-                    X##ko ^= HTOLE64(input[13]); \
+                    X##ki ^= loadInputLane(input, 12); \
+                    X##ko ^= loadInputLane(input, 13); \
                     if (laneCount < 15) { \
                     } \
                     else { \
-                        X##ku ^= HTOLE64(input[14]); \
+                        X##ku ^= loadInputLane(input, 14); \
                     } \
                 } \
             } \
         } \
     } \
     else { \
-        X##ba ^= HTOLE64(input[ 0]); \
-        X##be ^= HTOLE64(input[ 1]); \
-        X##bi ^= HTOLE64(input[ 2]); \
-        X##bo ^= HTOLE64(input[ 3]); \
-        X##bu ^= HTOLE64(input[ 4]); \
-        X##ga ^= HTOLE64(input[ 5]); \
-        X##ge ^= HTOLE64(input[ 6]); \
-        X##gi ^= HTOLE64(input[ 7]); \
-        X##go ^= HTOLE64(input[ 8]); \
-        X##gu ^= HTOLE64(input[ 9]); \
-        X##ka ^= HTOLE64(input[10]); \
-        X##ke ^= HTOLE64(input[11]); \
-        X##ki ^= HTOLE64(input[12]); \
-        X##ko ^= HTOLE64(input[13]); \
-        X##ku ^= HTOLE64(input[14]); \
-        X##ma ^= HTOLE64(input[15]); \
+        X##ba ^= loadInputLane(input, 0); \
+        X##be ^= loadInputLane(input, 1); \
+        X##bi ^= loadInputLane(input, 2); \
+        X##bo ^= loadInputLane(input, 3); \
+        X##bu ^= loadInputLane(input, 4); \
+        X##ga ^= loadInputLane(input, 5); \
+        X##ge ^= loadInputLane(input, 6); \
+        X##gi ^= loadInputLane(input, 7); \
+        X##go ^= loadInputLane(input, 8); \
+        X##gu ^= loadInputLane(input, 9); \
+        X##ka ^= loadInputLane(input, 10); \
+        X##ke ^= loadInputLane(input, 11); \
+        X##ki ^= loadInputLane(input, 12); \
+        X##ko ^= loadInputLane(input, 13); \
+        X##ku ^= loadInputLane(input, 14); \
+        X##ma ^= loadInputLane(input, 15); \
         if (laneCount < 24) { \
             if (laneCount < 20) { \
                 if (laneCount < 18) { \
                     if (laneCount < 17) { \
                     } \
                     else { \
-                        X##me ^= HTOLE64(input[16]); \
+                        X##me ^= loadInputLane(input, 16); \
                     } \
                 } \
                 else { \
-                    X##me ^= HTOLE64(input[16]); \
-                    X##mi ^= HTOLE64(input[17]); \
+                    X##me ^= loadInputLane(input, 16); \
+                    X##mi ^= loadInputLane(input, 17); \
                     if (laneCount < 19) { \
                     } \
                     else { \
-                        X##mo ^= HTOLE64(input[18]); \
+                        X##mo ^= loadInputLane(input, 18); \
                     } \
                 } \
             } \
             else { \
-                X##me ^= HTOLE64(input[16]); \
-                X##mi ^= HTOLE64(input[17]); \
-                X##mo ^= HTOLE64(input[18]); \
-                X##mu ^= HTOLE64(input[19]); \
+                X##me ^= loadInputLane(input, 16); \
+                X##mi ^= loadInputLane(input, 17); \
+                X##mo ^= loadInputLane(input, 18); \
+                X##mu ^= loadInputLane(input, 19); \
                 if (laneCount < 22) { \
                     if (laneCount < 21) { \
                     } \
                     else { \
-                        X##sa ^= HTOLE64(input[20]); \
+                        X##sa ^= loadInputLane(input, 20); \
                     } \
                 } \
                 else { \
-                    X##sa ^= HTOLE64(input[20]); \
-                    X##se ^= HTOLE64(input[21]); \
+                    X##sa ^= loadInputLane(input, 20); \
+                    X##se ^= loadInputLane(input, 21); \
                     if (laneCount < 23) { \
                     } \
                     else { \
-                        X##si ^= HTOLE64(input[22]); \
+                        X##si ^= loadInputLane(input, 22); \
                     } \
                 } \
             } \
         } \
         else { \
-            X##me ^= HTOLE64(input[16]); \
-            X##mi ^= HTOLE64(input[17]); \
-            X##mo ^= HTOLE64(input[18]); \
-            X##mu ^= HTOLE64(input[19]); \
-            X##sa ^= HTOLE64(input[20]); \
-            X##se ^= HTOLE64(input[21]); \
-            X##si ^= HTOLE64(input[22]); \
-            X##so ^= HTOLE64(input[23]); \
+            X##me ^= loadInputLane(input, 16); \
+            X##mi ^= loadInputLane(input, 17); \
+            X##mo ^= loadInputLane(input, 18); \
+            X##mu ^= loadInputLane(input, 19); \
+            X##sa ^= loadInputLane(input, 20); \
+            X##se ^= loadInputLane(input, 21); \
+            X##si ^= loadInputLane(input, 22); \
+            X##so ^= loadInputLane(input, 23); \
             if (laneCount < 25) { \
             } \
             else { \
-                X##su ^= HTOLE64(input[24]); \
+                X##su ^= loadInputLane(input, 24); \
             } \
         } \
     }

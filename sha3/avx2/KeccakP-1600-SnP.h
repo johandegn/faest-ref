@@ -21,32 +21,31 @@ Please refer to SnP-documentation.h for more details.
 #ifndef _KeccakP_1600_SnP_h_
 #define _KeccakP_1600_SnP_h_
 
-#include <stddef.h>
+#include "KeccakP-1600-AVX2.h"
 
-#ifdef __MINGW32__
-#define FORCE_SYSV __attribute__((sysv_abi))
-#else
-#define FORCE_SYSV
-#endif
+typedef KeccakP1600_AVX2_state KeccakP1600_state;
 
-#define KeccakP1600_implementation      "AVX2 optimized implementation"
-#define KeccakP1600_stateSizeInBytes    200
-#define KeccakP1600_stateAlignment      8
-#define KeccakF1600_FastLoop_supported
-#define KeccakP1600_12rounds_FastLoop_supported
+#define KeccakP1600_GetImplementation               KeccakP1600_AVX2_GetImplementation
+#define KeccakP1600_GetFeatures                     KeccakP1600_AVX2_GetFeatures
+#define KeccakP1600_StaticInitialize                KeccakP1600_AVX2_StaticInitialize
+#define KeccakP1600_Initialize                      KeccakP1600_AVX2_Initialize
+#define KeccakP1600_AddByte                         KeccakP1600_AVX2_AddByte
+#define KeccakP1600_AddBytes                        KeccakP1600_AVX2_AddBytes
+#define KeccakP1600_OverwriteBytes                  KeccakP1600_AVX2_OverwriteBytes
+#define KeccakP1600_OverwriteWithZeroes             KeccakP1600_AVX2_OverwriteWithZeroes
+#define KeccakP1600_Permute_Nrounds                 KeccakP1600_AVX2_Permute_Nrounds
+#define KeccakP1600_Permute_12rounds                KeccakP1600_AVX2_Permute_12rounds
+#define KeccakP1600_Permute_24rounds                KeccakP1600_AVX2_Permute_24rounds
+#define KeccakP1600_ExtractBytes                    KeccakP1600_AVX2_ExtractBytes
+#define KeccakP1600_ExtractAndAddBytes              KeccakP1600_AVX2_ExtractAndAddBytes
+#define KeccakF1600_FastLoop_Absorb                 KeccakF1600_AVX2_FastLoop_Absorb
+#define KeccakP1600_12rounds_FastLoop_Absorb        KeccakP1600_12rounds_AVX2_FastLoop_Absorb
 
-#define KeccakP1600_StaticInitialize()
-FORCE_SYSV void KeccakP1600_Initialize(void *state);
-FORCE_SYSV void KeccakP1600_AddByte(void *state, unsigned char data, unsigned int offset);
-FORCE_SYSV void KeccakP1600_AddBytes(void *state, const unsigned char *data, unsigned int offset, unsigned int length);
-FORCE_SYSV void KeccakP1600_OverwriteBytes(void *state, const unsigned char *data, unsigned int offset, unsigned int length);
-FORCE_SYSV void KeccakP1600_OverwriteWithZeroes(void *state, unsigned int byteCount);
-FORCE_SYSV void KeccakP1600_Permute_Nrounds(void *state, unsigned int nrounds);
-FORCE_SYSV void KeccakP1600_Permute_12rounds(void *state);
-FORCE_SYSV void KeccakP1600_Permute_24rounds(void *state);
-FORCE_SYSV void KeccakP1600_ExtractBytes(const void *state, unsigned char *data, unsigned int offset, unsigned int length);
-FORCE_SYSV void KeccakP1600_ExtractAndAddBytes(const void *state, const unsigned char *input, unsigned char *output, unsigned int offset, unsigned int length);
-FORCE_SYSV size_t KeccakF1600_FastLoop_Absorb(void *state, unsigned int laneCount, const unsigned char *data, size_t dataByteLen);
-FORCE_SYSV size_t KeccakP1600_12rounds_FastLoop_Absorb(void *state, unsigned int laneCount, const unsigned char *data, size_t dataByteLen);
+#define KeccakP1600_ODDuplexingFastInOut(...)           0
+#define KeccakP1600_12rounds_ODDuplexingFastInOut(...)  0
+#define KeccakP1600_ODDuplexingFastOut(...)             0
+#define KeccakP1600_12rounds_ODDuplexingFastOut(...)    0
+#define KeccakP1600_ODDuplexingFastIn(...)              0
+#define KeccakP1600_12rounds_ODDuplexingFastIn(...)     0
 
 #endif

@@ -21,34 +21,31 @@ Please refer to SnP-documentation.h for more details.
 #ifndef _KeccakP_1600_SnP_h_
 #define _KeccakP_1600_SnP_h_
 
-#include "brg_endian.h"
-#include "KeccakP-1600-opt64-config.h"
+#include "KeccakP-1600-plain64.h"
 
-#define KeccakP1600_implementation      "generic 64-bit optimized implementation (" KeccakP1600_implementation_config ")"
-#define KeccakP1600_stateSizeInBytes    200
-#define KeccakP1600_stateAlignment      8
-#define KeccakF1600_FastLoop_supported
-#define KeccakP1600_12rounds_FastLoop_supported
+typedef KeccakP1600_plain64_state KeccakP1600_state;
 
-#include <stddef.h>
+#define KeccakP1600_GetImplementation               KeccakP1600_plain64_GetImplementation
+#define KeccakP1600_GetFeatures                     KeccakP1600_plain64_GetFeatures
 
-#define KeccakP1600_StaticInitialize()
-void KeccakP1600_Initialize(void *state);
-#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
-#define KeccakP1600_AddByte(state, byte, offset) \
-    ((unsigned char*)(state))[(offset)] ^= (byte)
-#else
-void KeccakP1600_AddByte(void *state, unsigned char data, unsigned int offset);
-#endif
-void KeccakP1600_AddBytes(void *state, const unsigned char *data, unsigned int offset, unsigned int length);
-void KeccakP1600_OverwriteBytes(void *state, const unsigned char *data, unsigned int offset, unsigned int length);
-void KeccakP1600_OverwriteWithZeroes(void *state, unsigned int byteCount);
-void KeccakP1600_Permute_Nrounds(void *state, unsigned int nrounds);
-void KeccakP1600_Permute_12rounds(void *state);
-void KeccakP1600_Permute_24rounds(void *state);
-void KeccakP1600_ExtractBytes(const void *state, unsigned char *data, unsigned int offset, unsigned int length);
-void KeccakP1600_ExtractAndAddBytes(const void *state, const unsigned char *input, unsigned char *output, unsigned int offset, unsigned int length);
-size_t KeccakF1600_FastLoop_Absorb(void *state, unsigned int laneCount, const unsigned char *data, size_t dataByteLen);
-size_t KeccakP1600_12rounds_FastLoop_Absorb(void *state, unsigned int laneCount, const unsigned char *data, size_t dataByteLen);
+#define KeccakP1600_StaticInitialize                KeccakP1600_plain64_StaticInitialize
+#define KeccakP1600_Initialize                      KeccakP1600_plain64_Initialize
+#define KeccakP1600_AddByte                         KeccakP1600_plain64_AddByte
+#define KeccakP1600_AddBytes                        KeccakP1600_plain64_AddBytes
+#define KeccakP1600_OverwriteBytes                  KeccakP1600_plain64_OverwriteBytes
+#define KeccakP1600_OverwriteWithZeroes             KeccakP1600_plain64_OverwriteWithZeroes
+#define KeccakP1600_Permute_Nrounds                 KeccakP1600_plain64_Permute_Nrounds
+#define KeccakP1600_Permute_12rounds                KeccakP1600_plain64_Permute_12rounds
+#define KeccakP1600_Permute_24rounds                KeccakP1600_plain64_Permute_24rounds
+#define KeccakP1600_ExtractBytes                    KeccakP1600_plain64_ExtractBytes
+#define KeccakP1600_ExtractAndAddBytes              KeccakP1600_plain64_ExtractAndAddBytes
+#define KeccakF1600_FastLoop_Absorb                 KeccakF1600_plain64_FastLoop_Absorb
+#define KeccakP1600_12rounds_FastLoop_Absorb        KeccakP1600_12rounds_plain64_FastLoop_Absorb
+#define KeccakP1600_ODDuplexingFastInOut            KeccakP1600_plain64_ODDuplexingFastInOut
+#define KeccakP1600_12rounds_ODDuplexingFastInOut   KeccakP1600_12rounds_plain64_ODDuplexingFastInOut
+#define KeccakP1600_ODDuplexingFastOut              KeccakP1600_plain64_ODDuplexingFastOut
+#define KeccakP1600_12rounds_ODDuplexingFastOut     KeccakP1600_12rounds_plain64_ODDuplexingFastOut
+#define KeccakP1600_ODDuplexingFastIn               KeccakP1600_plain64_ODDuplexingFastIn
+#define KeccakP1600_12rounds_ODDuplexingFastIn      KeccakP1600_12rounds_plain64_ODDuplexingFastIn
 
 #endif

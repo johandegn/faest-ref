@@ -12,6 +12,4 @@
 #endif
 #define PLATFORM_BYTE_ORDER 1
 
-#define HTOLE64(x) htole64((x))
-
 #endif
