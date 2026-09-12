@@ -655,10 +655,6 @@ else
       'sha3/armv8a-neon/KeccakP-1600-armv8a-neon.s',
     )
   endif
-
-  if host_machine.cpu_family() == 'arm'
-    defines += '-DDISABLE_MISALIGNED_ACCESS=1'
-  endif
 endif
 
 # generate files for parameter sets
